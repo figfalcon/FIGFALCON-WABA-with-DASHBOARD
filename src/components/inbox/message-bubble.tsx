@@ -36,6 +36,15 @@ function StatusIcon({ status }: { status: Message["status"] }) {
   }
 }
 
+function MediaUnavailable({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-slate-700/40 px-3 py-2 text-xs text-slate-300">
+      <ImageOff className="h-4 w-4 shrink-0 text-slate-500" />
+      <span>{label} unavailable</span>
+    </div>
+  );
+}
+
 function MediaImage({ url, alt }: { url: string; alt: string }) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -111,8 +120,10 @@ function MessageContent({ message }: { message: Message }) {
     case "image":
       return (
         <div>
-          {message.media_url && (
+          {message.media_url ? (
             <MediaImage url={message.media_url} alt="Shared image" />
+          ) : (
+            <MediaUnavailable label="Image" />
           )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
@@ -125,12 +136,14 @@ function MessageContent({ message }: { message: Message }) {
     case "video":
       return (
         <div>
-          {message.media_url && (
+          {message.media_url ? (
             <video
               src={message.media_url}
               controls
               className="max-h-64 max-w-60 rounded-lg"
             />
+          ) : (
+            <MediaUnavailable label="Video" />
           )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
@@ -143,16 +156,21 @@ function MessageContent({ message }: { message: Message }) {
     case "audio":
       return (
         <div>
-          {message.media_url && (
+          {message.media_url ? (
             <audio src={message.media_url} controls className="max-w-60" />
+          ) : (
+            <MediaUnavailable label="Audio" />
           )}
         </div>
       );
 
     case "document":
+      if (!message.media_url) {
+        return <MediaUnavailable label={message.content_text || "Document"} />;
+      }
       return (
         <a
-          href={message.media_url ?? "#"}
+          href={message.media_url}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 rounded-lg bg-slate-700/50 px-3 py-2 text-sm hover:bg-slate-700"

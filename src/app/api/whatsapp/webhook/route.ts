@@ -27,6 +27,7 @@ interface WhatsAppMessage {
   video?: { id: string; mime_type: string; caption?: string }
   document?: { id: string; mime_type: string; filename?: string; caption?: string }
   audio?: { id: string; mime_type: string }
+  sticker?: { id: string; mime_type: string }
   location?: { latitude: number; longitude: number; name?: string; address?: string }
   reaction?: { message_id: string; emoji: string }
 }
@@ -235,10 +236,24 @@ async function processMessage(
   // column; the MIME type is only used to construct the proxy URL during
   // parseMessageContent. Silence the unused-var warning:
   void mediaType
+
+  // The messages.content_type CHECK constraint only allows:
+  //   text, image, document, audio, video, location, template
+  // Map incoming WhatsApp types that aren't in that list to the closest
+  // allowed value so the INSERT doesn't fail with a constraint error.
+  const ALLOWED_CONTENT_TYPES = new Set([
+    'text', 'image', 'document', 'audio', 'video', 'location', 'template',
+  ])
+  const contentType = ALLOWED_CONTENT_TYPES.has(message.type)
+    ? message.type
+    : message.type === 'sticker'
+      ? 'image'   // stickers are images
+      : 'text'    // reaction, unknown → text fallback
+
   const { error: msgError } = await supabaseAdmin().from('messages').insert({
     conversation_id: conversation.id,
     sender_type: 'customer',
-    content_type: message.type,
+    content_type: contentType,
     content_text: contentText,
     media_url: mediaUrl,
     message_id: message.id,
@@ -275,6 +290,25 @@ async function parseMessageContent(
   mediaUrl: string | null
   mediaType: string | null
 }> {
+  // getMediaUrl signature is (mediaId, accessToken) — earlier code had
+  // the args swapped, so every verification hit an invalid Meta URL and
+  // fell through to the catch block, leaving mediaUrl as null. That's
+  // why images showed up as empty bubbles in the inbox.
+  const verifyAndBuildUrl = async (
+    mediaId: string
+  ): Promise<string | null> => {
+    try {
+      await getMediaUrl(mediaId, accessToken)
+      return `/api/whatsapp/media/${mediaId}`
+    } catch (error) {
+      console.error(
+        `Failed to verify media ${mediaId} with Meta:`,
+        error instanceof Error ? error.message : error
+      )
+      return null
+    }
+  }
+
   switch (message.type) {
     case 'text':
       return {
@@ -284,61 +318,55 @@ async function parseMessageContent(
       }
 
     case 'image':
-      if (message.image) {
-        try {
-          await getMediaUrl(accessToken, message.image.id)
-          return {
-            contentText: message.image.caption || null,
-            mediaUrl: `/api/whatsapp/media/${message.image.id}`,
-            mediaType: message.image.mime_type,
-          }
-        } catch (error) {
-          console.error('Error verifying image media:', error)
+      if (message.image?.id) {
+        return {
+          contentText: message.image.caption || null,
+          mediaUrl: await verifyAndBuildUrl(message.image.id),
+          mediaType: message.image.mime_type,
         }
       }
-      return { contentText: message.image?.caption || null, mediaUrl: null, mediaType: null }
+      return { contentText: null, mediaUrl: null, mediaType: null }
 
     case 'video':
-      if (message.video) {
-        try {
-          await getMediaUrl(accessToken, message.video.id)
-          return {
-            contentText: message.video.caption || null,
-            mediaUrl: `/api/whatsapp/media/${message.video.id}`,
-            mediaType: message.video.mime_type,
-          }
-        } catch (error) {
-          console.error('Error verifying video media:', error)
+      if (message.video?.id) {
+        return {
+          contentText: message.video.caption || null,
+          mediaUrl: await verifyAndBuildUrl(message.video.id),
+          mediaType: message.video.mime_type,
         }
       }
-      return { contentText: message.video?.caption || null, mediaUrl: null, mediaType: null }
+      return { contentText: null, mediaUrl: null, mediaType: null }
 
     case 'document':
-      if (message.document) {
-        try {
-          await getMediaUrl(accessToken, message.document.id)
-          return {
-            contentText: message.document.caption || message.document.filename || null,
-            mediaUrl: `/api/whatsapp/media/${message.document.id}`,
-            mediaType: message.document.mime_type,
-          }
-        } catch (error) {
-          console.error('Error verifying document media:', error)
+      if (message.document?.id) {
+        return {
+          contentText:
+            message.document.caption || message.document.filename || null,
+          mediaUrl: await verifyAndBuildUrl(message.document.id),
+          mediaType: message.document.mime_type,
         }
       }
-      return { contentText: message.document?.filename || null, mediaUrl: null, mediaType: null }
+      return { contentText: null, mediaUrl: null, mediaType: null }
 
     case 'audio':
-      if (message.audio) {
-        try {
-          await getMediaUrl(accessToken, message.audio.id)
-          return {
-            contentText: null,
-            mediaUrl: `/api/whatsapp/media/${message.audio.id}`,
-            mediaType: message.audio.mime_type,
-          }
-        } catch (error) {
-          console.error('Error verifying audio media:', error)
+      if (message.audio?.id) {
+        return {
+          contentText: null,
+          mediaUrl: await verifyAndBuildUrl(message.audio.id),
+          mediaType: message.audio.mime_type,
+        }
+      }
+      return { contentText: null, mediaUrl: null, mediaType: null }
+
+    case 'sticker':
+      // Stickers are images under the hood. Treat them as such so the
+      // MessageBubble renders the <img>. The caller maps the DB
+      // content_type to 'image' for the CHECK constraint.
+      if (message.sticker?.id) {
+        return {
+          contentText: null,
+          mediaUrl: await verifyAndBuildUrl(message.sticker.id),
+          mediaType: message.sticker.mime_type,
         }
       }
       return { contentText: null, mediaUrl: null, mediaType: null }
