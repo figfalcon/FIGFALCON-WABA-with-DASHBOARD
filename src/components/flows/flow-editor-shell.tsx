@@ -150,8 +150,12 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
           )}
         </div>
 
-        {/* ---- validation / activate-readiness bar ---- */}
-        <div className="px-6 pb-5 pt-3">
+        {/* ---- validation / activate-readiness bar ----
+            Capped + independently scrollable so a long issue list
+            scrolls in place instead of eating into the stage's flex-1
+            height budget (which used to squeeze the canvas/list down
+            to a sliver once there were more than a handful of issues). */}
+        <div className="max-h-56 shrink-0 overflow-y-auto px-6 pb-5 pt-3">
           <ValidationPanel />
         </div>
       </div>
