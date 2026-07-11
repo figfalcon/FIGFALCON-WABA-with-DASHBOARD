@@ -160,7 +160,9 @@ export function evaluateConditionPredicate(args: {
       return args.subjectValue === (args.configValue ?? "");
     case "contains":
       if (args.subjectValue === undefined) return false;
-      return args.subjectValue.includes(args.configValue ?? "");
+      return args.subjectValue
+        .toLowerCase()
+        .includes((args.configValue ?? "").toLowerCase());
   }
 }
 

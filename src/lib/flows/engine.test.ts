@@ -296,4 +296,21 @@ describe("evaluateConditionPredicate", () => {
       }),
     ).toBe(false);
   });
+
+  it("contains: case-insensitive (free-text customer replies vary in casing)", () => {
+    expect(
+      evaluateConditionPredicate({
+        operator: "contains",
+        subjectValue: "Not really",
+        configValue: "no",
+      }),
+    ).toBe(true);
+    expect(
+      evaluateConditionPredicate({
+        operator: "contains",
+        subjectValue: "NOT INTERESTED, thanks",
+        configValue: "not interested",
+      }),
+    ).toBe(true);
+  });
 });
