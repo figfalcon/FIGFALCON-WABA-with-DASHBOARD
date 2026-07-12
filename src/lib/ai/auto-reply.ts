@@ -47,22 +47,43 @@ async function getOrCreateInterestedTag(
 }
 
 /**
- * Act on the model's interest signal for this turn: tag (or untag) the
- * contact and, for a fresh "yes", kick the tag_added automation so any
- * interest-gated follow-up sequence starts from here — not from every
- * message, and never for leads who said no. Best-effort; never throws.
+ * Reconcile the interest-gated follow-up state after the AI has replied
+ * to an inbound message. Runs on EVERY AI reply (not just the turn the
+ * model first flags interest), so the follow-up clock re-arms from the
+ * lead's latest message. Best-effort; never throws.
+ *
+ * Behaviour:
+ *  - Model flagged "not interested" this turn → drop the Interested tag
+ *    and cancel any pending follow-up. No re-arm. Done.
+ *  - Model flagged "interested" this turn → ensure the Interested tag.
+ *  - Then, if the contact is (now or already) tagged Interested → cancel
+ *    the current pending timer (they just replied, so they're active) and
+ *    fire a FRESH 12h→24h→48h cascade from now. This is what makes the
+ *    sequence restart if an interested lead replies and then goes quiet
+ *    again: every reply resets the clock; a later silence re-triggers the
+ *    follow-ups from 12h.
+ *
+ * The webhook already cancels pending runs on every inbound, so a lead a
+ * human has taken over (AI off → this never runs) still won't get nagged.
  */
-async function applyInterestSignal(args: {
+export async function reconcileFollowup(args: {
   db: ReturnType<typeof supabaseAdmin>
   accountId: string
   userId: string
   contactId: string
-  interest: 'yes' | 'no'
+  /** The model's interest read for this turn, if any. */
+  interest?: 'yes' | 'no'
 }): Promise<void> {
   const { db, accountId, userId, contactId, interest } = args
   try {
     const tagId = await getOrCreateInterestedTag(db, accountId, userId)
     if (!tagId) return
+
+    if (interest === 'no') {
+      await db.from('contact_tags').delete().eq('contact_id', contactId).eq('tag_id', tagId)
+      await cancelPendingAutomationRuns(accountId, contactId)
+      return
+    }
 
     if (interest === 'yes') {
       await db
@@ -71,18 +92,28 @@ async function applyInterestSignal(args: {
           { contact_id: contactId, tag_id: tagId },
           { onConflict: 'contact_id,tag_id', ignoreDuplicates: true },
         )
-      await runAutomationsForTrigger({
-        accountId,
-        triggerType: 'tag_added',
-        contactId,
-        context: { tag_id: tagId },
-      })
-    } else {
-      await db.from('contact_tags').delete().eq('contact_id', contactId).eq('tag_id', tagId)
-      await cancelPendingAutomationRuns(accountId, contactId)
     }
+
+    // Is the contact currently an interested lead? (True right after a
+    // 'yes' upsert above, or from a tag set on an earlier turn.)
+    const { count } = await db
+      .from('contact_tags')
+      .select('id', { count: 'exact', head: true })
+      .eq('contact_id', contactId)
+      .eq('tag_id', tagId)
+    if ((count ?? 0) === 0) return // not an interested lead → nothing to arm
+
+    // Reset the clock: clear the current timer (they just replied) and
+    // start a fresh cascade so a later silence re-triggers the follow-ups.
+    await cancelPendingAutomationRuns(accountId, contactId)
+    await runAutomationsForTrigger({
+      accountId,
+      triggerType: 'tag_added',
+      contactId,
+      context: { tag_id: tagId },
+    })
   } catch (err) {
-    console.error('[ai auto-reply] applyInterestSignal failed:', err)
+    console.error('[ai auto-reply] reconcileFollowup failed:', err)
   }
 }
 
@@ -192,18 +223,6 @@ export async function dispatchInboundToAiReply(
       messages,
     })
 
-    // Fire-and-forget: tag/untag the contact and (for a fresh "yes") kick
-    // the tag_added automation. Never blocks or delays the customer send.
-    if (interest) {
-      void applyInterestSignal({
-        db,
-        accountId,
-        userId: configOwnerUserId,
-        contactId,
-        interest,
-      })
-    }
-
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
     // swallows its own errors, so the floating promise can't reject.
@@ -272,6 +291,19 @@ export async function dispatchInboundToAiReply(
       contactId,
       text,
       aiGenerated: true,
+    })
+
+    // We actually replied — now reconcile the follow-up clock. Awaited
+    // (we're already past the customer send, inside the webhook's after()
+    // block, so this adds no customer-facing latency) so its tag write is
+    // committed before the re-arm reads it back. Every reply from an
+    // interested lead restarts the 12h→24h→48h cascade from now.
+    await reconcileFollowup({
+      db,
+      accountId,
+      userId: configOwnerUserId,
+      contactId,
+      interest,
     })
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
