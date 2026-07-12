@@ -38,6 +38,58 @@ async function throwMetaError(response: Response, fallback: string): Promise<nev
   throw new Error(message)
 }
 
+export interface MarkReadArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** Meta's message_id of the INBOUND (customer→business) message. */
+  messageId: string
+  /**
+   * When true, also show a typing indicator to the customer. It stays up
+   * until we send a message on this conversation or ~25s elapse — so a
+   * bot/agent reply that lands within a few seconds naturally clears it.
+   */
+  showTyping?: boolean
+}
+
+/**
+ * Mark an inbound message as read and (optionally) show a typing
+ * indicator. Both are the same Meta call:
+ *   POST /{phone_number_id}/messages
+ *   { messaging_product, status:'read', message_id, typing_indicator? }
+ *
+ * Marking as read gives the customer the blue double-tick on the message
+ * THEY sent us. The typing indicator shows the "…" animation while we
+ * prepare a reply, so the lead sees we're responding instead of silence.
+ *
+ * Best-effort: callers swallow errors — a failure here must never block
+ * inbound processing or the actual reply.
+ *
+ * Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/guides/mark-messages-as-read
+ */
+export async function markMessageRead(args: MarkReadArgs): Promise<void> {
+  const { phoneNumberId, accessToken, messageId, showTyping } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    status: 'read',
+    message_id: messageId,
+  }
+  if (showTyping) {
+    body.typing_indicator = { type: 'text' }
+  }
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+}
+
 // ============================================================
 // Phone number / account
 // ============================================================

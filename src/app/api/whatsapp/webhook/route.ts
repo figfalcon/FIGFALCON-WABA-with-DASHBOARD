@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl, downloadMedia, markMessageRead } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
@@ -292,6 +292,25 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]
         const contact = value.contacts[i] || value.contacts[0]
+
+        // Mark the inbound message as read (so the customer gets the blue
+        // double-tick on the message they sent us) and, for text, show a
+        // typing indicator while we prepare a reply — so the lead sees
+        // "…" instead of silence during the few seconds the AI takes.
+        // Fired before processMessage so the indicator appears promptly.
+        // Best-effort: a failure here must never block inbound handling.
+        if (message?.id) {
+          try {
+            await markMessageRead({
+              phoneNumberId,
+              accessToken: decryptedAccessToken,
+              messageId: message.id,
+              showTyping: message.type === 'text',
+            })
+          } catch (err) {
+            console.error('[webhook] markMessageRead failed:', err)
+          }
+        }
 
         await processMessage(
           message,
