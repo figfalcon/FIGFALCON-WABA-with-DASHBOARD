@@ -336,3 +336,33 @@ describe("triggerMatches — interactive_reply", () => {
     expect(triggerMatches(automation([]), { interactive_reply_id: "yes" })).toBe(false);
   });
 });
+
+describe("triggerMatches — tag_added", () => {
+  function automation(tag_id: string | undefined): Automation {
+    return {
+      id: "a1",
+      account_id: ACCOUNT,
+      user_id: "u1",
+      name: "on tag",
+      trigger_type: "tag_added",
+      trigger_config: tag_id === undefined ? {} : { tag_id },
+      is_active: true,
+      execution_count: 0,
+      created_at: "",
+      updated_at: "",
+    };
+  }
+
+  it("matches only the specific tag it's configured for", () => {
+    expect(triggerMatches(automation("tag-1"), { tag_id: "tag-1" })).toBe(true);
+  });
+
+  it("does not match a different tag being added", () => {
+    expect(triggerMatches(automation("tag-1"), { tag_id: "tag-2" })).toBe(false);
+  });
+
+  it("does not match when no tag_id is configured or present", () => {
+    expect(triggerMatches(automation(undefined), { tag_id: "tag-1" })).toBe(false);
+    expect(triggerMatches(automation("tag-1"), {})).toBe(false);
+  });
+});

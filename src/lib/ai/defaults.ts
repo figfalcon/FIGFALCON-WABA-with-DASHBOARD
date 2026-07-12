@@ -22,6 +22,15 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
  */
 export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
+/**
+ * Sentinels the model appends (auto-reply mode only) to signal its read
+ * on lead interest for this turn, without saying so to the customer.
+ * Parsed and stripped by `generateReply`. Drives whether a follow-up
+ * automation should start tracking this lead.
+ */
+export const INTERESTED_SENTINEL = '[[INTERESTED]]'
+export const NOT_INTERESTED_SENTINEL = '[[NOT_INTERESTED]]'
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
@@ -69,6 +78,9 @@ export function buildSystemPrompt(args: {
   if (mode === 'auto_reply') {
     parts.push(
       `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — reply with exactly ${HANDOFF_SENTINEL} and nothing else. A human agent will then take over. Prefer handing off over guessing.`,
+    )
+    parts.push(
+      `After writing your reply, decide if this turn makes the lead's interest level newly clear. If they just gave a clear positive signal (agreed to a call/demo, said yes to seeing more, asked to move forward) and you have not already flagged this, append ${INTERESTED_SENTINEL} at the very end of your message, after the customer-facing text. If they just clearly declined or opted out (said not interested, no, stop, remove me) append ${NOT_INTERESTED_SENTINEL} instead. Only use one of these when the signal is genuinely clear from what they just said — most turns get neither. Never mention these markers to the customer; they are stripped before sending.`,
     )
   }
 

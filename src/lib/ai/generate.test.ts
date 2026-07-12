@@ -60,6 +60,28 @@ describe('parseGeneration', () => {
     })
   })
 
+  it('detects + strips the interested sentinel', () => {
+    expect(parseGeneration('Great, see you then! [[INTERESTED]]')).toEqual({
+      text: 'Great, see you then!',
+      handoff: false,
+      interest: 'yes',
+      usage: null,
+    })
+  })
+
+  it('detects + strips the not-interested sentinel', () => {
+    expect(parseGeneration('No worries at all! [[NOT_INTERESTED]]')).toEqual({
+      text: 'No worries at all!',
+      handoff: false,
+      interest: 'no',
+      usage: null,
+    })
+  })
+
+  it('leaves interest undefined when no sentinel is present', () => {
+    expect(parseGeneration('Just a normal reply').interest).toBeUndefined()
+  })
+
   it('passes usage straight through', () => {
     const usage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 }
     expect(parseGeneration('Hi', usage)).toEqual({

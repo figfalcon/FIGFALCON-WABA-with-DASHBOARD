@@ -56,10 +56,16 @@ export interface ProviderResult {
 
 /** Outcome of a generation call. */
 export interface GenerateResult {
-  /** The reply text, with any handoff sentinel stripped. */
+  /** The reply text, with any handoff/interest sentinel stripped. */
   text: string
   /** True when the model asked to hand off to a human (auto-reply mode). */
   handoff: boolean
+  /**
+   * The model's read on lead interest for this turn, when it signalled
+   * one via sentinel (auto-reply mode only). `undefined` when it didn't
+   * — most turns are neither a clear yes nor a clear no.
+   */
+  interest?: 'yes' | 'no'
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

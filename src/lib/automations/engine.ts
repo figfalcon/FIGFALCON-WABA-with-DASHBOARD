@@ -6,6 +6,7 @@ import type {
   ConditionStepConfig,
   KeywordMatchTriggerConfig,
   InteractiveReplyTriggerConfig,
+  TagTriggerConfig,
   SendMessageStepConfig,
   SendButtonsStepConfig,
   SendListStepConfig,
@@ -647,6 +648,14 @@ export function triggerMatches(automation: Automation, ctx: AutomationContext | 
       const k = cfg.case_sensitive ? raw : raw.toLowerCase()
       return cfg.match_type === 'exact' ? haystack === k : haystack.includes(k)
     })
+  }
+
+  // Only fire for the specific tag this automation was configured for —
+  // `ctx.tag_id` is the tag that was actually just added; without this
+  // check every tag_added automation would fire on every tag, ever.
+  if (automation.trigger_type === 'tag_added') {
+    const cfg = automation.trigger_config as TagTriggerConfig
+    return !!cfg?.tag_id && !!ctx?.tag_id && ctx.tag_id === cfg.tag_id
   }
 
   // Match on the tapped button / list-row id (exact). Lets multi-step

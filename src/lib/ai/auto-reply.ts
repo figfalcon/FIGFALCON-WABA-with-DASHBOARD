@@ -9,6 +9,82 @@ import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import {
+  runAutomationsForTrigger,
+  cancelPendingAutomationRuns,
+} from '@/lib/automations/engine'
+
+const INTERESTED_TAG_NAME = 'Interested Lead'
+
+/**
+ * Get-or-create the account's "Interested Lead" tag. Looked up by name
+ * so repeated calls (one per interested reply, across every conversation)
+ * converge on the same row instead of creating duplicates.
+ */
+async function getOrCreateInterestedTag(
+  db: ReturnType<typeof supabaseAdmin>,
+  accountId: string,
+  userId: string,
+): Promise<string | null> {
+  const { data: existing } = await db
+    .from('tags')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('name', INTERESTED_TAG_NAME)
+    .maybeSingle()
+  if (existing?.id) return existing.id as string
+
+  const { data: created, error } = await db
+    .from('tags')
+    .insert({ account_id: accountId, user_id: userId, name: INTERESTED_TAG_NAME, color: '#22c55e' })
+    .select('id')
+    .maybeSingle()
+  if (error) {
+    console.error('[ai auto-reply] failed to create interested tag:', error)
+    return null
+  }
+  return (created?.id as string) ?? null
+}
+
+/**
+ * Act on the model's interest signal for this turn: tag (or untag) the
+ * contact and, for a fresh "yes", kick the tag_added automation so any
+ * interest-gated follow-up sequence starts from here — not from every
+ * message, and never for leads who said no. Best-effort; never throws.
+ */
+async function applyInterestSignal(args: {
+  db: ReturnType<typeof supabaseAdmin>
+  accountId: string
+  userId: string
+  contactId: string
+  interest: 'yes' | 'no'
+}): Promise<void> {
+  const { db, accountId, userId, contactId, interest } = args
+  try {
+    const tagId = await getOrCreateInterestedTag(db, accountId, userId)
+    if (!tagId) return
+
+    if (interest === 'yes') {
+      await db
+        .from('contact_tags')
+        .upsert(
+          { contact_id: contactId, tag_id: tagId },
+          { onConflict: 'contact_id,tag_id', ignoreDuplicates: true },
+        )
+      await runAutomationsForTrigger({
+        accountId,
+        triggerType: 'tag_added',
+        contactId,
+        context: { tag_id: tagId },
+      })
+    } else {
+      await db.from('contact_tags').delete().eq('contact_id', contactId).eq('tag_id', tagId)
+      await cancelPendingAutomationRuns(accountId, contactId)
+    }
+  } catch (err) {
+    console.error('[ai auto-reply] applyInterestSignal failed:', err)
+  }
+}
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -112,11 +188,23 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff, usage } = await generateReply({
+    const { text, handoff, interest, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
     })
+
+    // Fire-and-forget: tag/untag the contact and (for a fresh "yes") kick
+    // the tag_added automation. Never blocks or delays the customer send.
+    if (interest) {
+      void applyInterestSignal({
+        db,
+        accountId,
+        userId: configOwnerUserId,
+        contactId,
+        interest,
+      })
+    }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
