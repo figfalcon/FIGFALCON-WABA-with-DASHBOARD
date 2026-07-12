@@ -126,22 +126,20 @@ export async function dispatchInboundToAiReply(
     const config = await loadAiConfig(db, accountId)
     if (!config || !config.autoReplyEnabled) return
 
-    // Deterministic, user-configured responders win over the LLM — the
-    // caller already excludes messages a Flow consumed. Message-level
-    // automations (`new_message_received` / `keyword_match`) are
-    // dispatched independently for this same inbound and may send their
-    // own reply, so if the account has any active one we stand down to
-    // avoid double-texting the customer. (Relationship triggers like
-    // `first_inbound_message` don't count — they're not per-message
-    // auto-responders.)
-    const { data: autoResponders } = await db
-      .from('automations')
-      .select('id')
-      .eq('account_id', accountId)
-      .eq('is_active', true)
-      .in('trigger_type', ['new_message_received', 'keyword_match'])
-      .limit(1)
-    if (autoResponders && autoResponders.length > 0) return
+    // The AI Agent is the always-on responder: it must reply to every
+    // inbound message (first message, mid-conversation, cold contact —
+    // anything) until a human explicitly takes over. Eligibility is
+    // therefore gated ONLY by human ownership, an explicit per-thread
+    // pause, and the reply cap — checked below.
+    //
+    // We deliberately do NOT stand down just because the account has an
+    // active message-level automation. That old behaviour silently muted
+    // the AI account-wide the moment any `new_message_received` /
+    // `keyword_match` automation existed (e.g. a background tag/wait
+    // follow-up), which broke the "AI always replies" guarantee. Interest
+    // tracking for follow-ups is now driven off the AI's own judgement
+    // (see applyInterestSignal + the tag_added trigger), so there's no
+    // per-message automation racing the AI to send.
 
     const { data: conv, error: convErr } = await db
       .from('conversations')

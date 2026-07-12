@@ -120,11 +120,15 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(systemPrompt).toContain('Returns accepted within 30 days.')
   })
 
-  it('stands down when an active message-level automation exists', async () => {
+  it('still replies even when an active message-level automation exists', async () => {
+    // The AI Agent is the always-on responder — an unrelated active
+    // automation (e.g. a background tag/wait follow-up) must NOT mute it.
     h.state.autoResponders = [{ id: 'auto-1' }]
     await dispatchInboundToAiReply(ARGS)
-    expect(h.generateReply).not.toHaveBeenCalled()
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.generateReply).toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: 'conv-1', text: 'Hello!' }),
+    )
   })
 
   it('does not send when the atomic slot claim loses the race', async () => {
