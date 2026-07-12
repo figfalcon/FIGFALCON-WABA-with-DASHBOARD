@@ -5,7 +5,10 @@ import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
-import { runAutomationsForTrigger } from '@/lib/automations/engine'
+import {
+  runAutomationsForTrigger,
+  cancelPendingAutomationRuns,
+} from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -781,6 +784,13 @@ async function processMessage(
   // listens to only one trigger runs only when that trigger matches.
   if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
   if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
+  // A fresh inbound message means the conversation moved on — cancel any
+  // wait-suspended automation runs (e.g. a follow-up mid-12h-wait) still
+  // pending for this contact so a stale timer can't fire after they've
+  // already re-engaged.
+  cancelPendingAutomationRuns(accountId, contactRecord.id).catch((err) =>
+    console.error('[automations] cancel pending failed:', err),
+  )
   for (const triggerType of automationTriggers) {
     runAutomationsForTrigger({
       accountId,

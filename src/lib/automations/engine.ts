@@ -166,6 +166,25 @@ export async function resumePendingExecution(pending: {
   }
 }
 
+/**
+ * Cancel any wait-suspended automation runs still pending for a contact.
+ * Call this before dispatching automations for a fresh inbound message —
+ * a new message means the conversation moved on, so a stale timer from an
+ * earlier message (e.g. a 12h follow-up wait) should not still fire later
+ * and step on a conversation the contact already re-engaged with.
+ */
+export async function cancelPendingAutomationRuns(
+  accountId: string,
+  contactId: string,
+): Promise<void> {
+  await supabaseAdmin()
+    .from('automation_pending_executions')
+    .update({ status: 'done' })
+    .eq('account_id', accountId)
+    .eq('contact_id', contactId)
+    .eq('status', 'pending')
+}
+
 // ------------------------------------------------------------
 // Internal execution
 // ------------------------------------------------------------
