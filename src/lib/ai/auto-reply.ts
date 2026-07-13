@@ -3,7 +3,11 @@ import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { generateReply } from './generate'
-import { buildSystemPrompt } from './defaults'
+import {
+  buildSystemPrompt,
+  SERVICE_CODES,
+  type ServiceFocus,
+} from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
@@ -174,17 +178,88 @@ export async function dispatchInboundToAiReply(
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select(
+        'assigned_agent_id, ai_autoreply_disabled, ai_reply_count, ai_service_focus, ai_context_reset_at',
+      )
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
     if (conv.assigned_agent_id) return // a human owns this thread
     if (conv.ai_autoreply_disabled) return // handed off / turned off here
+
+    let replyCount: number = conv.ai_reply_count ?? 0
+    let serviceFocus = (conv.ai_service_focus ?? null) as ServiceFocus | null
+    let contextSince: string | null = conv.ai_context_reset_at ?? null
+
+    // Session-based reply budget: the cap bounds one ACTIVE burst of
+    // conversation, not the thread's lifetime. If the previous message
+    // in the thread is over an hour old, the lead is re-engaging after
+    // a gap — treat it as a new session and refund the full budget.
+    // Best-effort: on any error we just keep the current count.
+    try {
+      const { data: recent } = await db
+        .from('messages')
+        .select('created_at, content_text, sender_type')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: false })
+        .limit(2)
+      const prev = recent?.[1]
+      if (
+        replyCount > 0 &&
+        prev?.created_at &&
+        Date.now() - new Date(prev.created_at as string).getTime() >
+          60 * 60 * 1000
+      ) {
+        replyCount = 0
+        await db
+          .from('conversations')
+          .update({ ai_reply_count: 0 })
+          .eq('id', conversationId)
+      }
+
+      // `reset` keyword: wipe the AI's memory of this thread. Message
+      // history stays in the inbox; the model just stops seeing anything
+      // before this point, drops any specialist focus, and gets a fresh
+      // budget — it greets the lead like a brand-new contact.
+      const latest = recent?.[0]
+      if (
+        latest?.sender_type === 'customer' &&
+        typeof latest.content_text === 'string' &&
+        latest.content_text.trim().toLowerCase() === 'reset'
+      ) {
+        const nowIso = new Date().toISOString()
+        contextSince = nowIso
+        serviceFocus = null
+        replyCount = 0
+        await db
+          .from('conversations')
+          .update({
+            ai_context_reset_at: nowIso,
+            ai_service_focus: null,
+            ai_reply_count: 0,
+          })
+          .eq('id', conversationId)
+      }
+    } catch (err) {
+      console.error('[ai auto-reply] session/reset check failed:', err)
+    }
+
     // Cheap early-out; the authoritative cap check is the atomic claim
     // below (this read can race a concurrent inbound).
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+    if (replyCount >= config.autoReplyMaxPerConversation) return
 
-    const messages = await buildConversationContext(db, conversationId)
+    let messages = await buildConversationContext(
+      db,
+      conversationId,
+      undefined,
+      contextSince,
+    )
+    // Right after a reset the filtered context is empty (the `reset`
+    // message itself is excluded). Seed a plain greeting turn so the
+    // model opens fresh instead of staying silent.
+    if (messages.length === 0 && contextSince) {
+      messages = [{ role: 'user', content: 'hi' }]
+    }
     if (messages.length === 0) return
 
     // Account-wide throttle on the shared BYO key. The per-conversation
@@ -215,13 +290,32 @@ export async function dispatchInboundToAiReply(
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      serviceFocus,
     })
 
-    const { text, handoff, interest, usage } = await generateReply({
+    const { text, handoff, interest, service, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
     })
+
+    // Persist a routing change the model signalled: a service code
+    // focuses the thread on that specialist playbook from the next turn;
+    // GLOBAL hands back to the generalist. Best-effort.
+    if (service) {
+      const next: ServiceFocus | null =
+        service === 'GLOBAL' ? null : (SERVICE_CODES[service] ?? serviceFocus)
+      if (next !== serviceFocus) {
+        void db
+          .from('conversations')
+          .update({ ai_service_focus: next })
+          .eq('id', conversationId)
+          .then(({ error }) => {
+            if (error)
+              console.error('[ai auto-reply] focus update failed:', error)
+          })
+      }
+    }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
@@ -247,7 +341,7 @@ export async function dispatchInboundToAiReply(
       // which notifies the agent.
       const summary = buildHandoffSummary({
         messages,
-        replyCount: conv.ai_reply_count ?? 0,
+        replyCount,
       })
       const update: Record<string, unknown> = {
         ai_autoreply_disabled: true,

@@ -20,12 +20,21 @@ export async function buildConversationContext(
   db: SupabaseClient,
   conversationId: string,
   limit: number = aiContextMessageLimit(),
+  /**
+   * When set, only messages created strictly AFTER this ISO timestamp
+   * are fed to the model — the "reset" keyword stamps this on the
+   * conversation so the AI starts fresh while the inbox keeps the full
+   * history.
+   */
+  sinceIso?: string | null,
 ): Promise<ChatMessage[]> {
-  const { data, error } = await db
+  let q = db
     .from('messages')
     .select('sender_type, content_text')
     .eq('conversation_id', conversationId)
     .eq('content_type', 'text')
+  if (sinceIso) q = q.gt('created_at', sinceIso)
+  const { data, error } = await q
     .order('created_at', { ascending: false })
     .limit(limit)
 

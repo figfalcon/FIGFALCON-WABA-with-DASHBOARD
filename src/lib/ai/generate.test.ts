@@ -82,6 +82,20 @@ describe('parseGeneration', () => {
     expect(parseGeneration('Just a normal reply').interest).toBeUndefined()
   })
 
+  it('detects + strips a service routing sentinel', () => {
+    const r = parseGeneration('Love it — let me tell you more. [[SERVICE:VOICE_AI]]')
+    expect(r.text).toBe('Love it — let me tell you more.')
+    expect(r.service).toBe('VOICE_AI')
+  })
+
+  it('detects GLOBAL handback', () => {
+    expect(parseGeneration('Sure! [[SERVICE:GLOBAL]]').service).toBe('GLOBAL')
+  })
+
+  it('leaves service undefined when absent', () => {
+    expect(parseGeneration('Just chatting').service).toBeUndefined()
+  })
+
   it('passes usage straight through', () => {
     const usage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 }
     expect(parseGeneration('Hi', usage)).toEqual({

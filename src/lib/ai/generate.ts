@@ -9,6 +9,7 @@ import {
   HANDOFF_SENTINEL,
   INTERESTED_SENTINEL,
   NOT_INTERESTED_SENTINEL,
+  SERVICE_SENTINEL_RE,
   aiRequestTimeoutMs,
 } from './defaults'
 import { generateOpenAi } from './providers/openai'
@@ -71,6 +72,7 @@ export function parseGeneration(
   let interest: 'yes' | 'no' | undefined
   if (raw.includes(INTERESTED_SENTINEL)) interest = 'yes'
   else if (raw.includes(NOT_INTERESTED_SENTINEL)) interest = 'no'
+  const service = SERVICE_SENTINEL_RE.exec(raw)?.[1]
   const text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
@@ -78,6 +80,7 @@ export function parseGeneration(
     .join('')
     .split(NOT_INTERESTED_SENTINEL)
     .join('')
+    .replace(new RegExp(SERVICE_SENTINEL_RE.source, 'g'), '')
     .trim()
-  return { text, handoff, interest, usage }
+  return { text, handoff, interest, service, usage }
 }

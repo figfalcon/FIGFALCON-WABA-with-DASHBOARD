@@ -66,6 +66,12 @@ export interface GenerateResult {
    * — most turns are neither a clear yes nor a clear no.
    */
   interest?: 'yes' | 'no'
+  /**
+   * Service-routing signal for this turn (auto-reply mode only).
+   * A service code routes the thread to that specialist playbook;
+   * 'GLOBAL' hands back to the generalist; `undefined` = no change.
+   */
+  service?: string
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }
