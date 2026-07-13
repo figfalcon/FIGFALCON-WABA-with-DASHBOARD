@@ -3,6 +3,7 @@ import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { generateReply } from './generate'
+import type { GenerateResult } from './types'
 import {
   buildSystemPrompt,
   SERVICE_CODES,
@@ -118,6 +119,83 @@ export async function reconcileFollowup(args: {
     })
   } catch (err) {
     console.error('[ai auto-reply] reconcileFollowup failed:', err)
+  }
+}
+
+/**
+ * Silent interest re-judgement when a human hands a thread back to the
+ * bot ("Resume AI"). The manual conversation may have flipped the
+ * lead's interest either way, and if the human's message was the last
+ * one there is no inbound to trigger a normal dispatch — so without
+ * this, an interested lead would get no follow-up cascade until they
+ * happened to message again.
+ *
+ * Reads the visible context (manual/human turns included — they map to
+ * the assistant role), asks the model ONLY for an interest verdict
+ * (nothing is sent to the customer), then reconciles the tag + the
+ * 12h→24h→48h cascade exactly like a normal post-reply pass:
+ *   interested → tag + fresh cascade armed from now
+ *   not interested → tag dropped + cascade cancelled
+ *   unclear → keep whatever state the thread already had (an already-
+ *   tagged lead still gets a fresh cascade; an untagged one stays off).
+ *
+ * Best-effort: never throws — a failed judgement leaves the thread in
+ * its previous state.
+ */
+export async function judgeInterestOnResume(args: {
+  accountId: string
+  conversationId: string
+  /** Used as tag-creator / audit user for the reconcile pass. */
+  userId: string
+}): Promise<void> {
+  const { accountId, conversationId, userId } = args
+  try {
+    const db = supabaseAdmin()
+    const config = await loadAiConfig(db, accountId)
+    if (!config) return
+
+    const { data: conv } = await db
+      .from('conversations')
+      .select('contact_id, ai_context_reset_at')
+      .eq('id', conversationId)
+      .maybeSingle()
+    if (!conv?.contact_id) return
+
+    const messages = await buildConversationContext(
+      db,
+      conversationId,
+      undefined,
+      (conv.ai_context_reset_at as string | null) ?? null,
+    )
+    if (messages.length === 0) return
+
+    const { interest, usage } = await generateReply({
+      config,
+      systemPrompt:
+        'You are auditing a WhatsApp sales conversation between a business (assistant — including turns written manually by a human agent) and a lead (user). ' +
+        "Decide the lead's CURRENT interest in the business's services from the whole conversation, weighing the latest turns most. " +
+        'Reply with exactly [[INTERESTED]] if they are clearly interested or agreed to move forward, exactly [[NOT_INTERESTED]] if they clearly declined or opted out, or exactly UNCLEAR if neither is clear. Output nothing else.',
+      messages,
+    })
+
+    void logAiUsage(db, {
+      accountId,
+      conversationId,
+      mode: 'auto_reply',
+      provider: config.provider,
+      model: config.model,
+      usage,
+    })
+
+    await reconcileFollowup({
+      db,
+      accountId,
+      userId,
+      contactId: conv.contact_id as string,
+      interest,
+    })
+  } catch (err) {
+    console.error('[ai auto-reply] resume judgement failed:', err)
   }
 }
 
@@ -293,11 +371,29 @@ export async function dispatchInboundToAiReply(
       serviceFocus,
     })
 
-    const { text, handoff, interest, service, usage } = await generateReply({
-      config,
-      systemPrompt,
-      messages,
-    })
+    // LLM call with one retry: a transient provider error or timeout
+    // must never leave the customer unanswered — that silent-drop is
+    // exactly the failure mode this bot exists to prevent.
+    let gen: GenerateResult | null = null
+    for (let attempt = 1; attempt <= 2 && !gen; attempt++) {
+      try {
+        gen = await generateReply({ config, systemPrompt, messages })
+      } catch (err) {
+        console.error(
+          `[ai auto-reply] generate attempt ${attempt} failed:`,
+          err,
+        )
+      }
+    }
+    // Both attempts failed → deterministic fallback so the lead still
+    // gets SOMETHING instead of dead air. No usage to log (no response).
+    const { text: rawText, handoff, interest, service, usage } = gen ?? {
+      text: '',
+      handoff: false,
+      interest: undefined,
+      service: undefined,
+      usage: null,
+    }
 
     // Persist a routing change the model signalled: a service code
     // focuses the thread on that specialist playbook from the next turn;
@@ -331,9 +427,9 @@ export async function dispatchInboundToAiReply(
       usage,
     })
 
-    if (handoff || !text) {
-      // The model can't (or shouldn't) answer — stop auto-replying on
-      // this thread and hand it to a human. We (a) pause the bot here
+    if (handoff) {
+      // The model explicitly asked for a human — stop auto-replying on
+      // this thread and hand it off. We (a) pause the bot here
       // (sticky until re-enabled), (b) route the conversation to the
       // configured handoff agent — null leaves it in the shared queue —
       // and (c) leave a short internal note so whoever picks it up has
@@ -354,6 +450,18 @@ export async function dispatchInboundToAiReply(
       }
       await db.from('conversations').update(update).eq('id', conversationId)
       return
+    }
+
+    // Deterministic output hygiene: the em/en dash reads as AI-generated,
+    // so it is mechanically stripped no matter what the model produced.
+    let text = rawText
+      .replace(/\s*[—–]\s*/g, ', ')
+      .trim()
+    // Empty text without a handoff (model glitch or both attempts
+    // failed) → safe fallback instead of silence. The always-reply
+    // guarantee outranks eloquence.
+    if (!text) {
+      text = "Sorry, I think my last message didn't go through. What were you saying?"
     }
 
     // Atomically claim a reply slot: the cap check + increment happen in

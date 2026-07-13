@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { judgeInterestOnResume } from '@/lib/ai/auto-reply'
 
 type Params = { params: Promise<{ conversationId: string }> }
 
@@ -93,6 +94,18 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json(
         { error: 'Failed to update conversation' },
         { status: 500 },
+      )
+    }
+
+    // Resuming the bot after a manual stretch: the human conversation may
+    // have flipped the lead's interest either way, and if the human's
+    // message was the last one there is no inbound to trigger a normal
+    // dispatch. Silently re-judge the whole visible thread (manual turns
+    // included) and reconcile the Interested tag + follow-up cascade.
+    // Runs after the response so the toggle click stays instant.
+    if (!paused) {
+      after(() =>
+        judgeInterestOnResume({ accountId, conversationId, userId }),
       )
     }
 

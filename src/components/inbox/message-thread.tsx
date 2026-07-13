@@ -48,7 +48,7 @@ import {
 } from "./message-composer";
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
-import { AiThreadBanner } from "./ai-thread-banner";
+import { AiThreadBanner, fetchAiAccountStatus } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 
@@ -172,7 +172,22 @@ export function MessageThread({
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
 
-  const { user } = useAuth();
+  const { user, accountId } = useAuth();
+
+  // Account-level AI auto-reply status (cached per account by the
+  // banner's helper). Drives the composer lock: while the bot owns the
+  // thread, manual typing is disabled until the agent clicks Take over.
+  const [aiAccountOn, setAiAccountOn] = useState(false);
+  useEffect(() => {
+    if (!accountId) return;
+    let alive = true;
+    fetchAiAccountStatus(accountId).then(
+      (s) => alive && setAiAccountOn(s.autoReplyOn),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [accountId]);
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -868,6 +883,14 @@ export function MessageThread({
     ? (currentAssignee?.full_name ?? t("assigned"))
     : t("assign");
 
+  // The bot owns this thread when account auto-reply is on, the thread
+  // isn't paused (Take over / handoff), and no human is assigned —
+  // mirrors the eligibility gates in the auto-reply dispatcher.
+  const aiOwnsThread =
+    aiAccountOn &&
+    !(conversation.ai_autoreply_disabled ?? false) &&
+    !assignedAgentId;
+
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
     // thread's flex *wrapper* (issue #165), but this root keeps the
@@ -1153,6 +1176,7 @@ export function MessageThread({
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
+        lockedByAi={aiOwnsThread}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}

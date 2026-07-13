@@ -23,7 +23,7 @@ interface AiAccountStatus {
 }
 const statusCache = new Map<string, AiAccountStatus>();
 
-async function fetchAiAccountStatus(accountId: string): Promise<AiAccountStatus> {
+export async function fetchAiAccountStatus(accountId: string): Promise<AiAccountStatus> {
   const cached = statusCache.get(accountId);
   if (cached) return cached;
   try {

@@ -112,6 +112,13 @@ interface MediaDraft {
 interface MessageComposerProps {
   conversationId: string;
   sessionExpired: boolean;
+  /**
+   * The AI bot currently owns this thread (auto-reply active, no human
+   * assigned). Manual sends are locked so a human can't accidentally
+   * race the bot mid-conversation — click "Take over" first, which
+   * pauses the bot and unlocks the composer.
+   */
+  lockedByAi?: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
@@ -134,6 +141,7 @@ const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 export function MessageComposer({
   conversationId,
   sessionExpired,
+  lockedByAi = false,
   onSend,
   onSendMedia,
   onSendInteractive,
@@ -188,7 +196,8 @@ export function MessageComposer({
   // For solo users this is always true — single-owner accounts pass
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
-  const readOnly = !canSend;
+  // AI-owned threads are locked for manual sends until "Take over".
+  const readOnly = !canSend || lockedByAi;
   // Media (like free-form text) is only allowed inside the 24h window.
   const inputsDisabled = readOnly || sessionExpired;
 
@@ -544,6 +553,13 @@ export function MessageComposer({
             preview={replyTo.preview}
             onDismiss={onClearReply}
           />
+        </div>
+      )}
+      {lockedByAi && !sessionExpired && (
+        <div className="mb-2 rounded-lg bg-primary/10 px-3 py-2">
+          <p className="text-xs text-primary">
+            AI is replying automatically. Click &quot;Take over&quot; above to write manually.
+          </p>
         </div>
       )}
       {sessionExpired && (
