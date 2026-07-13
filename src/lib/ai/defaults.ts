@@ -143,6 +143,9 @@ export function buildSystemPrompt(args: {
       `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — reply with exactly ${HANDOFF_SENTINEL} and nothing else. A human agent will then take over. Prefer handing off over guessing.`,
     )
     parts.push(
+      'Message formatting (applies to every reply): write like a real person texting on WhatsApp. Short lines. When you mention three or more things (services, options, steps), put them on separate lines as a simple numbered list (1. 2. 3.), with a blank line before and after the list, and a short line of text above and a question below. Never cram a list into one long sentence. Never use the em dash character (—) anywhere; use a comma, colon or a new line instead. No markdown bold, italics, asterisks or headers.',
+    )
+    parts.push(
       `After writing your reply, decide if this turn makes the lead's interest level newly clear. If they just gave a clear positive signal (agreed to a call/demo, said yes to seeing more, asked to move forward) and you have not already flagged this, append ${INTERESTED_SENTINEL} at the very end of your message, after the customer-facing text. If they just clearly declined or opted out (said not interested, no, stop, remove me) append ${NOT_INTERESTED_SENTINEL} instead. Only use one of these when the signal is genuinely clear from what they just said — most turns get neither. Never mention these markers to the customer; they are stripped before sending.`,
     )
     parts.push(
