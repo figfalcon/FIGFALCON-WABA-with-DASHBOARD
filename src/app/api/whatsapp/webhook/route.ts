@@ -18,10 +18,11 @@ import {
 } from '@/lib/whatsapp/template-webhook'
 
 // The `after()` callback in POST runs within this route's max duration.
-// Inbound processing can fan out to per-media Meta verification calls, so
-// give it headroom beyond the platform default (Vercel clamps this to the
-// plan's ceiling). Tune as needed.
-export const maxDuration = 60
+// Inbound processing can fan out to per-media Meta verification calls,
+// and the AI auto-reply retries with escalating waits (10s + 30s pauses
+// plus up to three 30s provider calls ≈ 130s worst case), so give it
+// generous headroom (Vercel clamps this to the plan's ceiling).
+export const maxDuration = 300
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

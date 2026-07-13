@@ -188,6 +188,16 @@ export function MessageThread({
       alive = false;
     };
   }, [accountId]);
+  useEffect(() => {
+    if (!accountId) return;
+    let alive = true;
+    fetchAiAccountStatus(accountId).then(
+      (s) => alive && setAiAccountOn(s.autoReplyOn),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [accountId]);
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1172,7 +1182,9 @@ export function MessageThread({
         }}
       />
 
-      {/* Composer */}
+      {/* Composer — locked while the bot owns the thread (auto-reply on,
+          not paused, no human assigned) so an agent can't accidentally
+          race the AI; "Take over" pauses the bot and unlocks it. */}
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}

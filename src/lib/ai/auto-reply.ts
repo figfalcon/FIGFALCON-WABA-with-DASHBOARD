@@ -371,16 +371,23 @@ export async function dispatchInboundToAiReply(
       serviceFocus,
     })
 
-    // LLM call with one retry: a transient provider error or timeout
-    // must never leave the customer unanswered — that silent-drop is
-    // exactly the failure mode this bot exists to prevent.
+    // LLM call with escalating retries: attempt 1 → wait 10s → attempt 2
+    // → wait 30s → attempt 3 → give up to the deterministic fallback.
+    // The pauses matter: the most common failure is the provider key's
+    // own rate limit (429) under a burst of messages, which clears after
+    // seconds — an immediate retry would just hit the same wall. A
+    // transient error must never leave the customer unanswered.
+    const RETRY_WAITS_MS = [10_000, 30_000]
     let gen: GenerateResult | null = null
-    for (let attempt = 1; attempt <= 2 && !gen; attempt++) {
+    for (let attempt = 0; attempt < 3 && !gen; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, RETRY_WAITS_MS[attempt - 1]))
+      }
       try {
         gen = await generateReply({ config, systemPrompt, messages })
       } catch (err) {
         console.error(
-          `[ai auto-reply] generate attempt ${attempt} failed:`,
+          `[ai auto-reply] generate attempt ${attempt + 1} failed:`,
           err,
         )
       }

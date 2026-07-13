@@ -161,12 +161,13 @@ export const RATE_LIMITS = {
   aiDraftAccount: { limit: 60, windowMs: 60_000 },
   /** AI auto-reply generation, per account. The per-conversation cap
    *  (`auto_reply_max_per_conversation`) bounds one thread; this bounds
-   *  the whole account across threads, so a burst of inbound from many
-   *  customers at once can't run the BYO key past the provider's limit
-   *  or the owner's budget. 30/min is generous for organic inbound while
-   *  capping a stampede; excess inbounds simply don't get an auto-reply
-   *  (they still land in the inbox for a human). */
-  aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+   *  the whole account across threads so a genuine stampede can't run the
+   *  BYO key past the provider's limit. Set HIGH (200/min ≈ 3/sec) so it
+   *  only ever trips on a real runaway, never on normal back-and-forth or
+   *  active testing — the product requirement is that the AI ALWAYS
+   *  replies, and this cap silently drops when hit, so it must stay well
+   *  above any realistic conversation volume. */
+  aiAutoReplyAccount: { limit: 200, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't
