@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag } from '@/types';
+import type { Contact, CustomField, Tag, ContactTag } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -62,6 +62,8 @@ const PAGE_SIZE = 25;
 
 interface ContactWithTags extends Contact {
   tags?: Tag[];
+  /** custom_field_id → value, for the custom field columns. */
+  customValues?: Record<string, string>;
 }
 
 export default function ContactsPage() {
@@ -97,11 +99,22 @@ export default function ContactsPage() {
   // All tags for display
   const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
 
+  // Custom field definitions — each becomes a table column.
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+
   // Guards against out-of-order fetch responses: each fetchContacts run
   // claims a sequence number and only the latest is allowed to commit its
   // results. Without this, rapidly toggling tag filters could let a slower
   // earlier request resolve last and render stale rows.
   const fetchSeq = useRef(0);
+
+  const fetchCustomFieldDefs = useCallback(async () => {
+    const { data } = await supabase
+      .from('custom_fields')
+      .select('*')
+      .order('field_name');
+    setCustomFields((data as CustomField[] | null) ?? []);
+  }, [supabase]);
 
   const fetchTags = useCallback(async () => {
     const { data } = await supabase.from('tags').select('*');
@@ -184,12 +197,19 @@ export default function ContactsPage() {
       return;
     }
 
-    // Fetch tags for these contacts
+    // Fetch tags + custom field values for these contacts (one query
+    // each for the whole page — no per-row round-trips).
     const contactIds = contactRows.map((c) => c.id);
-    const { data: contactTags } = await supabase
-      .from('contact_tags')
-      .select('contact_id, tag_id')
-      .in('contact_id', contactIds);
+    const [{ data: contactTags }, { data: customValueRows }] = await Promise.all([
+      supabase
+        .from('contact_tags')
+        .select('contact_id, tag_id')
+        .in('contact_id', contactIds),
+      supabase
+        .from('contact_custom_values')
+        .select('contact_id, custom_field_id, value')
+        .in('contact_id', contactIds),
+    ]);
     if (seq !== fetchSeq.current) return; // superseded by a newer fetch
 
     const tagsByContact: Record<string, string[]> = {};
@@ -198,11 +218,18 @@ export default function ContactsPage() {
       tagsByContact[ct.contact_id].push(ct.tag_id);
     });
 
+    const customByContact: Record<string, Record<string, string>> = {};
+    customValueRows?.forEach((cv) => {
+      if (!customByContact[cv.contact_id]) customByContact[cv.contact_id] = {};
+      customByContact[cv.contact_id][cv.custom_field_id] = cv.value ?? '';
+    });
+
     const enriched: ContactWithTags[] = contactRows.map((c) => ({
       ...c,
       tags: (tagsByContact[c.id] ?? [])
         .map((tid) => tagsMap[tid])
         .filter(Boolean),
+      customValues: customByContact[c.id] ?? {},
     }));
 
     setContacts(enriched);
@@ -216,7 +243,8 @@ export default function ContactsPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTags();
-  }, [fetchTags]);
+    fetchCustomFieldDefs();
+  }, [fetchTags, fetchCustomFieldDefs]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -527,8 +555,8 @@ export default function ContactsPage() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      {/* Table — horizontal scroll so custom field columns never squash */}
+      <div className="rounded-lg border border-border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">
@@ -545,6 +573,15 @@ export default function ContactsPage() {
               <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.company')}</TableHead>
+              {customFields.map((field) => (
+                <TableHead
+                  key={field.id}
+                  className="text-muted-foreground hidden whitespace-nowrap lg:table-cell"
+                  title={field.field_name}
+                >
+                  {field.field_name}
+                </TableHead>
+              ))}
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
               <TableHead className="text-muted-foreground w-12" />
@@ -553,7 +590,7 @@ export default function ContactsPage() {
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={8 + customFields.length} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">{t('loading')}</p>
@@ -562,7 +599,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={8 + customFields.length} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -612,6 +649,17 @@ export default function ContactsPage() {
                   <TableCell className="text-muted-foreground hidden lg:table-cell text-sm">
                     {contact.company || <span className="text-muted-foreground">-</span>}
                   </TableCell>
+                  {customFields.map((field) => (
+                    <TableCell
+                      key={field.id}
+                      className="text-muted-foreground hidden max-w-[10rem] truncate text-sm lg:table-cell"
+                      title={contact.customValues?.[field.id] || undefined}
+                    >
+                      {contact.customValues?.[field.id] || (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                  ))}
                   <TableCell className="hidden md:table-cell">
                     <div className="flex flex-wrap gap-1">
                       {contact.tags && contact.tags.length > 0 ? (
@@ -753,18 +801,28 @@ export default function ContactsPage() {
         onUpdated={fetchContacts}
       />
 
-      {/* Import Modal */}
+      {/* Import Modal — an import can create new custom fields, so
+          refresh the column definitions along with the rows */}
       <ImportModal
         open={importOpen}
         onOpenChange={setImportOpen}
-        onImported={fetchContacts}
+        onImported={() => {
+          fetchContacts();
+          fetchCustomFieldDefs();
+        }}
       />
 
       {/* Custom Fields Manager (admin+) */}
       {canEditSettings && (
         <CustomFieldsManager
           open={customFieldsOpen}
-          onOpenChange={setCustomFieldsOpen}
+          onOpenChange={(open) => {
+            setCustomFieldsOpen(open);
+            if (!open) {
+              fetchCustomFieldDefs();
+              fetchContacts();
+            }
+          }}
         />
       )}
 
