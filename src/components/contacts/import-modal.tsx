@@ -575,6 +575,15 @@ export function ImportModal({
                             {t('columns.tags')}
                           </th>
                         )}
+                        {customColumns.map((col) => (
+                          <th
+                            key={col}
+                            className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground"
+                            title={col}
+                          >
+                            {col}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/70">
@@ -618,6 +627,14 @@ export function ImportModal({
                               />
                             </td>
                           )}
+                          {customColumns.map((col) => (
+                            <td key={col} className="px-3 py-2 text-muted-foreground">
+                              <PreviewCell
+                                value={row.custom[col] || '—'}
+                                maxWidth="max-w-[8rem]"
+                              />
+                            </td>
+                          ))}
                         </tr>
                       ))}
                     </tbody>
