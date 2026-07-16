@@ -458,14 +458,42 @@ export function TemplateManager() {
   const headerNeedsMedia =
     form.header_format !== 'none' && form.header_format !== 'text';
 
-  async function handleHeaderImageFile(file: File) {
-    if (!['image/jpeg', 'image/png'].includes(file.type)) {
-      toast.error(t('toastInvalidImage'));
+  // Accepted MIME types + file-picker filters per media header format.
+  // Mirrors Meta's template-sample rules (see template-header-handle.ts):
+  // a share/page link can never work, so uploading the real file is the
+  // only reliable path for video/document headers.
+  const HEADER_UPLOAD_RULES = {
+    image: {
+      mimes: ['image/jpeg', 'image/png'],
+      accept: 'image/jpeg,image/png',
+      label: 'JPEG or PNG',
+      max: MEDIA_MAX_BYTES_BY_KIND.image,
+    },
+    video: {
+      mimes: ['video/mp4', 'video/3gpp'],
+      accept: 'video/mp4,video/3gpp',
+      label: 'MP4 or 3GPP',
+      max: MEDIA_MAX_BYTES_BY_KIND.video,
+    },
+    document: {
+      mimes: ['application/pdf'],
+      accept: 'application/pdf',
+      label: 'PDF',
+      max: MEDIA_MAX_BYTES_BY_KIND.document,
+    },
+  } as const;
+
+  type UploadableHeader = keyof typeof HEADER_UPLOAD_RULES;
+
+  async function handleHeaderMediaFile(file: File, kind: UploadableHeader) {
+    const rules = HEADER_UPLOAD_RULES[kind];
+    if (!(rules.mimes as readonly string[]).includes(file.type)) {
+      toast.error(`Header ${kind} must be ${rules.label}.`);
       return;
     }
-    if (file.size > MEDIA_MAX_BYTES_BY_KIND.image) {
+    if (file.size > rules.max) {
       toast.error(
-        t('toastImageTooLarge', { size: (file.size / 1024 / 1024).toFixed(1) }),
+        `That ${kind} is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is ${rules.max / 1024 / 1024} MB.`,
       );
       return;
     }
@@ -801,16 +829,25 @@ export function TemplateManager() {
 
               {headerNeedsMedia && (
                 <div className="space-y-2 mt-2">
-                  {form.header_format === 'image' && (
+                  {(form.header_format === 'image' ||
+                    form.header_format === 'video' ||
+                    form.header_format === 'document') && (
                     <div className="flex items-center gap-2">
                       <input
                         ref={headerFileRef}
                         type="file"
-                        accept="image/jpeg,image/png"
+                        accept={
+                          HEADER_UPLOAD_RULES[form.header_format as UploadableHeader]
+                            .accept
+                        }
                         className="hidden"
                         onChange={(e) => {
                           const f = e.target.files?.[0];
-                          if (f) void handleHeaderImageFile(f);
+                          if (f)
+                            void handleHeaderMediaFile(
+                              f,
+                              form.header_format as UploadableHeader,
+                            );
                           e.target.value = '';
                         }}
                       />
@@ -826,10 +863,14 @@ export function TemplateManager() {
                         ) : (
                           <Upload className="h-3.5 w-3.5" />
                         )}
-                        {t('uploadImage')}
+                        {form.header_format === 'image'
+                          ? t('uploadImage')
+                          : `Upload ${form.header_format}`}
                       </Button>
                       <span className="text-[11px] text-muted-foreground">
-                        {t('uploadHint')}
+                        {form.header_format === 'image'
+                          ? t('uploadHint')
+                          : `${HEADER_UPLOAD_RULES[form.header_format as UploadableHeader].label}, up to ${HEADER_UPLOAD_RULES[form.header_format as UploadableHeader].max / 1024 / 1024} MB`}
                       </span>
                     </div>
                   )}
