@@ -84,6 +84,13 @@ interface WhatsAppWebhookEntry {
         status: string
         timestamp: string
         recipient_id: string
+        /** Present on `failed` statuses — Meta's reason for refusing delivery. */
+        errors?: Array<{
+          code: number
+          title?: string
+          message?: string
+          error_data?: { details?: string }
+        }>
       }>
     }
     field: string
@@ -372,12 +379,48 @@ function isValidStatusTransition(current: string, incoming: string): boolean {
   return ii > ci
 }
 
+/**
+ * Flatten Meta's status-error array into one human-readable line for
+ * error_message columns. Failed statuses carry the actual refusal
+ * reason here (e.g. 131049 frequency cap, 131026 undeliverable) —
+ * dropping it left the UI showing a bare "Failed" with no cause.
+ */
+function formatStatusErrors(
+  errors?: Array<{
+    code: number
+    title?: string
+    message?: string
+    error_data?: { details?: string }
+  }>,
+): string | null {
+  if (!errors || errors.length === 0) return null
+  return errors
+    .map((e) => {
+      const label = e.error_data?.details || e.message || e.title || 'Unknown error'
+      return `${e.code}: ${label}`
+    })
+    .join(' | ')
+}
+
 async function handleStatusUpdate(status: {
   id: string
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code: number
+    title?: string
+    message?: string
+    error_data?: { details?: string }
+  }>
 }) {
+  if (status.status === 'failed') {
+    console.error(
+      `[webhook] Meta reported delivery FAILED for ${status.recipient_id} (${status.id}):`,
+      formatStatusErrors(status.errors) ?? 'no error details in payload',
+    )
+  }
+
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status. No
   //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
@@ -420,6 +463,10 @@ async function handleStatusUpdate(status: {
     if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
     if (status.status === 'delivered') update.delivered_at = tsIso
     if (status.status === 'read') update.read_at = tsIso
+    if (status.status === 'failed') {
+      update.error_message =
+        formatStatusErrors(status.errors) ?? 'Delivery failed (no reason given by Meta)'
+    }
 
     const { error: recUpdateErr } = await supabaseAdmin()
       .from('broadcast_recipients')

@@ -33,6 +33,7 @@ describe('parseContactCsv', () => {
     expect(parseContactCsv(csv)).toEqual({
       hasTagsColumn: true,
       hasCompanyColumn: false,
+      customColumns: [],
       rows: [
         {
           phone: '+15551234567',
@@ -40,6 +41,7 @@ describe('parseContactCsv', () => {
           email: undefined,
           company: undefined,
           tagNames: ['VIP', 'Lead'],
+          custom: {},
         },
         {
           phone: '+15559876543',
@@ -47,6 +49,7 @@ describe('parseContactCsv', () => {
           email: undefined,
           company: undefined,
           tagNames: ['Customer'],
+          custom: {},
         },
       ],
     });
@@ -59,6 +62,7 @@ describe('parseContactCsv', () => {
     expect(parseContactCsv(csv)).toEqual({
       hasTagsColumn: false,
       hasCompanyColumn: false,
+      customColumns: [],
       rows: [
         {
           phone: '+15551234567',
@@ -66,8 +70,61 @@ describe('parseContactCsv', () => {
           email: undefined,
           company: undefined,
           tagNames: [],
+          custom: {},
         },
       ],
     });
+  });
+
+  it('matches header aliases like "Phone Number" and "Company Name"', () => {
+    const csv = `Company Name,Full Name,Phone Number,Email Address
+Figfalcon,Bikram,917995602748,ai@figfalcon.com`;
+
+    const result = parseContactCsv(csv);
+    expect(result.hasCompanyColumn).toBe(true);
+    expect(result.customColumns).toEqual([]);
+    expect(result.rows).toEqual([
+      {
+        phone: '917995602748',
+        name: 'Bikram',
+        email: 'ai@figfalcon.com',
+        company: 'Figfalcon',
+        tagNames: [],
+        custom: {},
+      },
+    ]);
+  });
+
+  it('captures unrecognized columns as custom fields', () => {
+    const csv = `Company,name,phone number,Website available,website,Clinic rating.,City
+Figgy,,917995602748,,figfalcon.com,,pune`;
+
+    const result = parseContactCsv(csv);
+    expect(result.customColumns).toEqual([
+      'Website available',
+      'website',
+      'Clinic rating',
+      'City',
+    ]);
+    expect(result.rows).toEqual([
+      {
+        phone: '917995602748',
+        name: undefined,
+        email: undefined,
+        company: 'Figgy',
+        tagNames: [],
+        custom: {
+          website: 'figfalcon.com',
+          City: 'pune',
+        },
+      },
+    ]);
+  });
+
+  it('returns no rows when no phone-like header exists', () => {
+    const csv = `name,email
+Alice,alice@x.test`;
+
+    expect(parseContactCsv(csv).rows).toEqual([]);
   });
 });

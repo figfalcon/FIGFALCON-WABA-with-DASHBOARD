@@ -17,6 +17,10 @@ import {
   resolveImportTagIds,
   type ContactTagAssignment,
 } from '@/lib/contacts/resolve-import-tags';
+import {
+  assignImportedCustomFields,
+  type ContactCustomAssignment,
+} from '@/lib/contacts/import-custom-fields';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -135,6 +139,7 @@ export function ImportModal({
   const [parsedRows, setParsedRows] = useState<ParsedContactRow[]>([]);
   const [hasTagsColumn, setHasTagsColumn] = useState(false);
   const [hasCompanyColumn, setHasCompanyColumn] = useState(false);
+  const [customColumns, setCustomColumns] = useState<string[]>([]);
   const [tagColorByKey, setTagColorByKey] = useState<Map<string, string>>(
     new Map()
   );
@@ -144,6 +149,7 @@ export function ImportModal({
     skipped: number;
     failed: number;
     tagsAssigned: number;
+    customValues: number;
   } | null>(null);
 
   function reset() {
@@ -151,6 +157,7 @@ export function ImportModal({
     setParsedRows([]);
     setHasTagsColumn(false);
     setHasCompanyColumn(false);
+    setCustomColumns([]);
     setTagColorByKey(new Map());
     setResult(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -173,6 +180,7 @@ export function ImportModal({
       rows,
       hasTagsColumn: csvHasTags,
       hasCompanyColumn: csvHasCompany,
+      customColumns: csvCustomColumns,
     } = parseContactCsv(text);
 
     if (rows.length === 0) {
@@ -180,6 +188,7 @@ export function ImportModal({
       setParsedRows([]);
       setHasTagsColumn(false);
       setHasCompanyColumn(false);
+      setCustomColumns([]);
       setTagColorByKey(new Map());
       return;
     }
@@ -187,6 +196,7 @@ export function ImportModal({
     setParsedRows(rows);
     setHasTagsColumn(csvHasTags);
     setHasCompanyColumn(csvHasCompany);
+    setCustomColumns(csvCustomColumns);
 
     if (csvHasTags && accountId) {
       const { data: tags } = await supabase
@@ -227,22 +237,32 @@ export function ImportModal({
       skipped += inFileDupes;
 
       // 2) Skip numbers already in this account. One read of the
-      //    generated `phone_normalized` column (migration 022) → Set.
+      //    generated `phone_normalized` column (migration 022) → map of
+      //    normalized phone → id, so skipped rows can still refresh
+      //    their custom field values below.
       const { data: existingRows } = await supabase
         .from('contacts')
-        .select('phone_normalized')
+        .select('id, phone_normalized')
         .eq('account_id', accountId);
-      const existing = new Set(
-        (existingRows ?? [])
-          .map(
-            (r) => (r as { phone_normalized: string | null }).phone_normalized
-          )
-          .filter((p): p is string => !!p)
-      );
+      const existingIdByPhone = new Map<string, string>();
+      for (const r of (existingRows ?? []) as {
+        id: string;
+        phone_normalized: string | null;
+      }[]) {
+        if (r.phone_normalized) existingIdByPhone.set(r.phone_normalized, r.id);
+      }
+
+      const customAssignments: ContactCustomAssignment[] = [];
 
       const toInsert = unique.filter((row) => {
-        if (existing.has(normalizeKey(row.phone))) {
+        const existingId = existingIdByPhone.get(normalizeKey(row.phone));
+        if (existingId) {
           skipped++;
+          // Contact row untouched, but a re-import still refreshes its
+          // custom field values (upsert keyed on contact+field).
+          if (Object.keys(row.custom).length > 0) {
+            customAssignments.push({ contactId: existingId, custom: row.custom });
+          }
           return false;
         }
         return true;
@@ -305,6 +325,12 @@ export function ImportModal({
                   tagNames: source.tagNames,
                 });
               }
+              if (Object.keys(source.custom).length > 0) {
+                customAssignments.push({
+                  contactId: singleData.id,
+                  custom: source.custom,
+                });
+              }
             } else if (isUniqueViolation(singleErr)) {
               skipped++;
             } else {
@@ -319,11 +345,19 @@ export function ImportModal({
           // parallel inserts, zip by phone or returned id instead.
           for (let j = 0; j < inserted.length; j++) {
             const source = chunk[j];
-            if (!source || source.tagNames.length === 0) continue;
-            tagAssignments.push({
-              contactId: inserted[j].id,
-              tagNames: source.tagNames,
-            });
+            if (!source) continue;
+            if (source.tagNames.length > 0) {
+              tagAssignments.push({
+                contactId: inserted[j].id,
+                tagNames: source.tagNames,
+              });
+            }
+            if (Object.keys(source.custom).length > 0) {
+              customAssignments.push({
+                contactId: inserted[j].id,
+                custom: source.custom,
+              });
+            }
           }
         }
       }
@@ -341,13 +375,40 @@ export function ImportModal({
         toast.warning(t('toastTagsWarning'));
       }
 
-      setResult({ imported, skipped, failed, tagsAssigned });
+      // 6) Persist unrecognized CSV columns as custom field values
+      //    (creating missing field definitions when permitted). Same
+      //    rule as tags: a failure here must not mask the import.
+      let customValues = 0;
+      try {
+        const customResult = await assignImportedCustomFields(supabase, {
+          accountId,
+          userId: user.id,
+          customColumns,
+          assignments: customAssignments,
+          canCreateFields: canEditSettings,
+        });
+        customValues = customResult.valuesAssigned;
+        if (customResult.skippedColumns.length > 0) {
+          toast.info(
+            t('toastCustomColsSkipped', {
+              names: customResult.skippedColumns.join(', '),
+            })
+          );
+        }
+      } catch {
+        toast.warning(t('toastCustomWarning'));
+      }
+
+      setResult({ imported, skipped, failed, tagsAssigned, customValues });
       if (imported > 0) {
         toast.success(t('toastImported', { count: imported }));
         onImported();
       }
       if (tagsAssigned > 0) {
         toast.success(t('toastTagsAssigned', { count: tagsAssigned }));
+      }
+      if (customValues > 0) {
+        toast.success(t('toastCustomAssigned', { count: customValues }));
       }
       if (skippedNames.length > 0) {
         const sample = skippedNames.slice(0, 3).join(', ');
@@ -479,6 +540,14 @@ export function ImportModal({
                       {t('previewTags', { tags: tagStats.unique, contacts: tagStats.rowsWithTags })}
                     </span>
                   )}
+                  {customColumns.length > 0 && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-[11px] text-muted-foreground"
+                      title={customColumns.join(', ')}
+                    >
+                      {t('previewCustom', { names: customColumns.join(', ') })}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -578,6 +647,12 @@ export function ImportModal({
                   <div className="flex items-center gap-1.5 text-sm text-cyan-400">
                     <CheckCircle className="size-4 shrink-0" />
                     {t('resultTags', { count: result.tagsAssigned })}
+                  </div>
+                )}
+                {result.customValues > 0 && (
+                  <div className="flex items-center gap-1.5 text-sm text-violet-400">
+                    <CheckCircle className="size-4 shrink-0" />
+                    {t('resultCustom', { count: result.customValues })}
                   </div>
                 )}
                 {result.skipped > 0 && (
