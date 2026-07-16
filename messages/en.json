@@ -723,7 +723,12 @@
         "errorLoadTags": "Failed to load tags",
         "errorLoadFields": "Failed to load custom fields",
         "errorCsvParse": "Could not parse CSV file.",
-        "errorCsvMissingPhone": "CSV must have a 'phone' column."
+        "errorCsvMissingPhone": "CSV must have a 'phone' column.",
+        "csvNoRows": "No valid rows found. The CSV needs a phone column.",
+        "csvLoaded": "{count} contact(s) loaded",
+        "csvClear": "Remove",
+        "csvUpload": "Upload CSV",
+        "csvHint": "CSV with a phone column (name optional). An exported broadcast CSV works directly, so you can re-target the Failed list from a previous broadcast."
       },
       "personalize": {
         "title": "Personalize Variables",

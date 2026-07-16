@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { parseContactCsv } from '@/lib/contacts/parse-contact-csv';
+import { toast } from 'sonner';
 import { CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -91,6 +93,36 @@ export function Step2SelectAudience({
   const [loadingFields, setLoadingFields] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+
+  // CSV audience upload. Reuses the contacts-import parser, so header
+  // aliases ("phone number", "Mobile") and the exported broadcast CSV
+  // ("Phone" column) all work directly.
+  async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const { rows } = parseContactCsv(text);
+    if (rows.length === 0) {
+      toast.error(t('selectAudience.csvNoRows'));
+      setCsvFileName(null);
+      onUpdate({ ...audience, csvContacts: undefined });
+      if (csvInputRef.current) csvInputRef.current.value = '';
+      return;
+    }
+    setCsvFileName(file.name);
+    onUpdate({
+      ...audience,
+      csvContacts: rows.map((r) => ({ phone: r.phone, name: r.name })),
+    });
+  }
+
+  function clearCsv() {
+    setCsvFileName(null);
+    onUpdate({ ...audience, csvContacts: undefined });
+    if (csvInputRef.current) csvInputRef.current.value = '';
+  }
 
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
@@ -386,6 +418,57 @@ export function Step2SelectAudience({
                 placeholder={t('selectAudience.valuePlaceholder')}
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
+            </div>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'csv' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <p className="text-sm font-medium text-foreground">
+            {t('selectAudience.method.csv')}
+          </p>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleCsvFile}
+            className="hidden"
+          />
+          {audience.csvContacts && audience.csvContacts.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                <Upload className="size-3.5 text-primary" />
+                {csvFileName ?? 'CSV'}
+              </span>
+              <span className="text-sm text-foreground">
+                {t('selectAudience.csvLoaded', {
+                  count: audience.csvContacts.length,
+                })}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={clearCsv}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                <X className="size-3.5" />
+                {t('selectAudience.csvClear')}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Button
+                variant="outline"
+                onClick={() => csvInputRef.current?.click()}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                <Upload className="size-4" />
+                {t('selectAudience.csvUpload')}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {t('selectAudience.csvHint')}
+              </p>
             </div>
           )}
         </div>

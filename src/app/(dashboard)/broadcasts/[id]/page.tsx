@@ -210,7 +210,10 @@ export default function BroadcastDetailPage() {
       t('table.read'),
       t('table.error'),
     ];
-    const rows = recipients.map((r) => [
+    // Export honors the active status filter — filtering to "failed"
+    // and exporting yields exactly the remarketing list (re-importable
+    // as a CSV audience: the phone column header matches the importer).
+    const rows = filteredRecipients.map((r) => [
       r.contact?.name ?? '',
       r.contact?.phone ?? '',
       r.status,
@@ -221,7 +224,11 @@ export default function BroadcastDetailPage() {
     ]);
     const csv = toCsv([header, ...rows]);
     const safeName = broadcast.name.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
-    downloadBlob(`broadcast-${safeName}-${broadcastId.slice(0, 8)}.csv`, csv);
+    const filterSuffix = statusFilter === 'all' ? '' : `-${statusFilter}`;
+    downloadBlob(
+      `broadcast-${safeName}${filterSuffix}-${broadcastId.slice(0, 8)}.csv`,
+      csv,
+    );
   }
 
   async function handleDelete() {
@@ -514,7 +521,10 @@ export default function BroadcastDetailPage() {
                           ? new Date(recipient.read_at).toLocaleString()
                           : '-'}
                       </TableCell>
-                      <TableCell className="max-w-xs truncate text-xs text-red-400">
+                      <TableCell
+                        className="max-w-xs text-xs whitespace-normal break-words text-red-400"
+                        title={recipient.error_message ?? undefined}
+                      >
                         {recipient.error_message ?? '-'}
                       </TableCell>
                     </TableRow>
