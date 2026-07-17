@@ -94,6 +94,31 @@ export interface SendMessageResult {
 }
 
 /**
+ * Substitute {{N}} placeholders in a template body with the values the
+ * recipient actually received, so the persisted inbox message reads as
+ * real text instead of an empty "template" stub. Unresolved
+ * placeholders stay visible rather than being dropped.
+ */
+export function renderTemplateBody(body: string, params: string[]): string {
+  return body.replace(
+    /\{\{(\d+)\}\}/g,
+    (match, n) => params[Number(n) - 1] ?? match,
+  );
+}
+
+/** Pull body variable values out of structured SendTimeParams, if any. */
+function extractBodyParams(messageParams: unknown): string[] {
+  if (
+    messageParams &&
+    typeof messageParams === 'object' &&
+    Array.isArray((messageParams as { body?: unknown }).body)
+  ) {
+    return (messageParams as { body: unknown[] }).body.map((v) => String(v));
+  }
+  return [];
+}
+
+/**
  * Send a message in an existing conversation and persist it.
  *
  * `db` may be an RLS-scoped user client (dashboard) or the service-
@@ -448,13 +473,25 @@ export async function sendMessageToConversation(
   const interactiveBody =
     messageType === 'interactive' ? interactivePayload!.body : null;
 
+  // Template sends carry no contentText — persist the rendered body
+  // (placeholders substituted with this send's params) so the inbox
+  // thread shows the actual words the recipient received.
+  let templateBody: string | null = null;
+  if (messageType === 'template' && templateRow?.body_text) {
+    const bodyParams =
+      templateParams && templateParams.length > 0
+        ? templateParams
+        : extractBodyParams(templateMessageParams);
+    templateBody = renderTemplateBody(templateRow.body_text, bodyParams);
+  }
+
   const { data: messageRecord, error: msgError } = await db
     .from('messages')
     .insert({
       conversation_id: conversationId,
       sender_type: 'agent',
       content_type: messageType,
-      content_text: interactiveBody ?? contentText ?? null,
+      content_text: interactiveBody ?? templateBody ?? contentText ?? null,
       media_url: mediaUrl || null,
       template_name: templateName || null,
       interactive_payload:
@@ -478,7 +515,7 @@ export async function sendMessageToConversation(
   const lastMessageText =
     messageType === 'interactive'
       ? interactivePayloadPreviewText(interactivePayload!)
-      : contentText || `[${messageType}]`;
+      : templateBody || contentText || `[${messageType}]`;
 
   await db
     .from('conversations')

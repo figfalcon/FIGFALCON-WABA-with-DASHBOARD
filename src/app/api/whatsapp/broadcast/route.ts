@@ -16,15 +16,7 @@ import {
   RATE_LIMITS,
 } from '@/lib/rate-limit'
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation'
-
-/**
- * Substitute {{N}} placeholders with the per-recipient values so the
- * inbox shows the message exactly as the recipient received it.
- * Unresolved placeholders are left visible rather than dropped.
- */
-function renderTemplateBody(body: string, params: string[]): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (match, n) => params[Number(n) - 1] ?? match)
-}
+import { renderTemplateBody } from '@/lib/whatsapp/send-message'
 
 interface BroadcastResult {
   phone: string
