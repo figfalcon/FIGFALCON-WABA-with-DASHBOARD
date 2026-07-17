@@ -334,7 +334,16 @@
       "toastBulkDeleted": "{count} contacts deleted",
       "editColumnsBtn": "Edit columns",
       "editColumnsTitle": "Rename, reorder, or delete custom field columns",
-      "dragColumnHint": "Drag \"{name}\" to reorder columns"
+      "dragColumnHint": "Drag \"{name}\" to reorder columns",
+      "sendTemplateCol": "Send template",
+      "quickSendBtn": "Send",
+      "quickSendTitle": "Sends {template} (chosen from this contact's tags)",
+      "quickSendNoRoute": "No template mapped for this contact's tags. Add an interest tag, Cold Lead, or test_broadcast first.",
+      "quickSendConfirmTitle": "Send template?",
+      "quickSendConfirmDesc": "Send \"{template}\" to {name} ({phone})? The template was selected automatically from the contact's tags.",
+      "quickSendConfirmBtn": "Send now",
+      "toastQuickSendOk": "Sent {template} to {name}",
+      "toastQuickSendFailed": "Send failed: {error}"
     },
     "form": {
       "addTitle": "Add Contact",

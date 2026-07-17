@@ -49,12 +49,14 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  Send,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { sortCustomFields } from '@/lib/contacts/sort-custom-fields';
+import { resolveTemplateForTags } from '@/lib/contacts/tag-template-map';
 import { useCan } from '@/hooks/use-can';
 import { useAuth } from '@/hooks/use-auth';
 import { GatedButton } from '@/components/ui/gated-button';
@@ -162,6 +164,100 @@ export default function ContactsPage() {
     }
     return ordered;
   }, [customFields, colOrder, t]);
+
+  // ── One-click tag-routed template send ─────────────────────────
+  // Approved templates by name (language + body for variable filling).
+  const [templatesByName, setTemplatesByName] = useState<
+    Map<string, { language: string; body_text: string }>
+  >(new Map());
+  const [quickSendTarget, setQuickSendTarget] = useState<{
+    contact: ContactWithTags;
+    templateName: string;
+  } | null>(null);
+  const [quickSending, setQuickSending] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from('message_templates')
+        .select('name, language, body_text')
+        .eq('status', 'APPROVED');
+      if (!alive) return;
+      const map = new Map<string, { language: string; body_text: string }>();
+      for (const row of data ?? []) {
+        map.set(row.name, {
+          language: row.language ?? 'en_US',
+          body_text: row.body_text ?? '',
+        });
+      }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTemplatesByName(map);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [supabase]);
+
+  /** The template the row button would send, or null (no tag route /
+   *  template not approved locally). */
+  function quickSendTemplateFor(contact: ContactWithTags): string | null {
+    const name = resolveTemplateForTags((contact.tags ?? []).map((tg) => tg.name));
+    return name && templatesByName.has(name) ? name : null;
+  }
+
+  async function handleQuickSend() {
+    if (!quickSendTarget) return;
+    const { contact, templateName } = quickSendTarget;
+    const tpl = templatesByName.get(templateName);
+    if (!tpl) return;
+
+    // Fill {{1}} with the lead's name (falling back to company, then a
+    // neutral salutation); any further variables get empty strings.
+    const varCount = new Set(
+      [...tpl.body_text.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1]),
+    ).size;
+    const params =
+      varCount > 0
+        ? [
+            contact.name || contact.company || 'Doctor',
+            ...Array(Math.max(varCount - 1, 0)).fill(''),
+          ]
+        : [];
+
+    setQuickSending(true);
+    try {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact_id: contact.id,
+          message_type: 'template',
+          template_name: templateName,
+          template_language: tpl.language,
+          template_params: params,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(
+          t('toastQuickSendFailed', {
+            error: (payload as { error?: string }).error ?? `HTTP ${res.status}`,
+          }),
+        );
+        return;
+      }
+      toast.success(
+        t('toastQuickSendOk', {
+          template: templateName,
+          name: contact.name || contact.phone,
+        }),
+      );
+      setQuickSendTarget(null);
+    } finally {
+      setQuickSending(false);
+    }
+  }
 
   function handleColumnDrop() {
     if (dragColId && overColId && dragColId !== overColId) {
@@ -691,13 +787,16 @@ export default function ContactsPage() {
                   {col.label}
                 </TableHead>
               ))}
+              <TableHead className="text-muted-foreground whitespace-nowrap">
+                {t('sendTemplateCol')}
+              </TableHead>
               <TableHead className="text-muted-foreground w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={2 + columns.length} className="text-center py-12">
+                <TableCell colSpan={3 + columns.length} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">{t('loading')}</p>
@@ -706,7 +805,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={2 + columns.length} className="text-center py-12">
+                <TableCell colSpan={3 + columns.length} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -822,6 +921,31 @@ export default function ContactsPage() {
                         );
                     }
                   })}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const tplName = quickSendTemplateFor(contact);
+                      return (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!canEdit || !tplName}
+                          onClick={() =>
+                            tplName &&
+                            setQuickSendTarget({ contact, templateName: tplName })
+                          }
+                          title={
+                            tplName
+                              ? t('quickSendTitle', { template: tplName })
+                              : t('quickSendNoRoute')
+                          }
+                          className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                        >
+                          <Send className="size-3.5" />
+                          {t('quickSendBtn')}
+                        </Button>
+                      );
+                    })()}
+                  </TableCell>
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger
@@ -955,6 +1079,51 @@ export default function ContactsPage() {
           }}
         />
       )}
+
+      {/* Tag-routed quick send confirmation */}
+      <Dialog
+        open={quickSendTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setQuickSendTarget(null);
+        }}
+      >
+        <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">
+              {t('quickSendConfirmTitle')}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {quickSendTarget &&
+                t('quickSendConfirmDesc', {
+                  template: quickSendTarget.templateName,
+                  name:
+                    quickSendTarget.contact.name ||
+                    quickSendTarget.contact.company ||
+                    quickSendTarget.contact.phone,
+                  phone: quickSendTarget.contact.phone,
+                })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="bg-popover border-border">
+            <Button
+              variant="outline"
+              onClick={() => setQuickSendTarget(null)}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              {t('cancel')}
+            </Button>
+            <Button
+              onClick={handleQuickSend}
+              disabled={quickSending}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {quickSending && <Loader2 className="size-4 animate-spin" />}
+              <Send className="size-4" />
+              {t('quickSendConfirmBtn')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation */}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
