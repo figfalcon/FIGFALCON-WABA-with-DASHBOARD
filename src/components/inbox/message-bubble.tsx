@@ -14,12 +14,23 @@ import {
   ImageOff,
   CornerDownLeft,
   Sparkles,
+  ExternalLink,
+  Phone,
+  Copy,
+  Reply,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import { useTranslations } from "next-intl";
+
+/** Template button as stored on message_templates.buttons. */
+export interface TemplateButtonInfo {
+  type?: string;
+  text?: string;
+  url?: string;
+}
 
 interface MessageBubbleProps {
   message: Message;
@@ -28,6 +39,52 @@ interface MessageBubbleProps {
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /**
+   * Buttons of the template this message was sent from, so the thread
+   * shows the same tappable rows the recipient sees on their phone.
+   */
+  templateButtons?: TemplateButtonInfo[];
+}
+
+function TemplateButtonRows({ buttons }: { buttons: TemplateButtonInfo[] }) {
+  const icon = (type?: string) => {
+    const t = (type ?? "").toUpperCase();
+    if (t === "URL") return <ExternalLink className="h-3.5 w-3.5" />;
+    if (t === "PHONE_NUMBER") return <Phone className="h-3.5 w-3.5" />;
+    if (t === "COPY_CODE") return <Copy className="h-3.5 w-3.5" />;
+    return <Reply className="h-3.5 w-3.5" />;
+  };
+  return (
+    <div className="mt-2 space-y-1 border-t border-primary-foreground/20 pt-2">
+      {buttons.map((b, i) => {
+        const inner = (
+          <span className="flex items-center justify-center gap-1.5 text-xs font-medium">
+            {icon(b.type)}
+            {b.text ?? ""}
+          </span>
+        );
+        return (b.type ?? "").toUpperCase() === "URL" && b.url ? (
+          <a
+            key={i}
+            href={b.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-lg bg-primary-foreground/10 px-3 py-1.5 text-center hover:bg-primary-foreground/20"
+            title={b.url}
+          >
+            {inner}
+          </a>
+        ) : (
+          <div
+            key={i}
+            className="rounded-lg bg-primary-foreground/10 px-3 py-1.5 text-center"
+          >
+            {inner}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -119,7 +176,15 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   );
 }
 
-function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
+function MessageContent({
+  message,
+  t,
+  templateButtons,
+}: {
+  message: Message;
+  t: ReturnType<typeof useTranslations>;
+  templateButtons?: TemplateButtonInfo[];
+}) {
   switch (message.content_type) {
     case "text":
       return (
@@ -205,6 +270,9 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
               {message.content_text}
             </p>
           )}
+          {templateButtons && templateButtons.length > 0 && (
+            <TemplateButtonRows buttons={templateButtons} />
+          )}
         </div>
       );
 
@@ -264,6 +332,7 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  templateButtons,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
@@ -294,7 +363,7 @@ export function MessageBubble({
             onPrimary={isAgent}
           />
         )}
-        <MessageContent message={message} t={t} />
+        <MessageContent message={message} t={t} templateButtons={templateButtons} />
         <div
           className={cn(
             "mt-1 flex items-center gap-1",

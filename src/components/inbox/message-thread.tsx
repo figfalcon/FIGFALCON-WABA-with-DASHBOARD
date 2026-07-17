@@ -39,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageBubble } from "./message-bubble";
+import { MessageBubble, type TemplateButtonInfo } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import {
   MessageComposer,
@@ -173,6 +173,64 @@ export function MessageThread({
   const tQuote = useTranslations("Inbox.replyQuote");
 
   const { user, accountId } = useAuth();
+
+  // Buttons of the templates used in this thread, keyed by template
+  // name — rendered under template bubbles so agents see the same
+  // tappable rows the recipient got on their phone.
+  const [templateButtonsByName, setTemplateButtonsByName] = useState<
+    Record<string, TemplateButtonInfo[]>
+  >({});
+  useEffect(() => {
+    const names = [
+      ...new Set(
+        messages
+          .map((m) => m.template_name)
+          .filter((n): n is string => Boolean(n)),
+      ),
+    ].filter((n) => !(n in templateButtonsByName));
+    if (names.length === 0) return;
+    let alive = true;
+    (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("message_templates")
+        .select("name, buttons")
+        .in("name", names);
+      if (!alive) return;
+      setTemplateButtonsByName((prev) => {
+        const next = { ...prev };
+        // Record every requested name (empty array when the template is
+        // deleted/button-less) so we don't refetch on each render.
+        for (const n of names) next[n] = [];
+        for (const row of data ?? []) {
+          next[row.name] = Array.isArray(row.buttons) ? row.buttons : [];
+        }
+        return next;
+      });
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
+
+  // Delete a message from the CRM record. WhatsApp's Cloud API cannot
+  // unsend ("delete for everyone" doesn't exist for business senders),
+  // so this only removes our copy — the confirm text says exactly that.
+  const handleDeleteMessage = useCallback(
+    async (msg: Message) => {
+      if (!window.confirm(t("deleteConfirm"))) return;
+      const supabase = createClient();
+      const { error } = await supabase.from("messages").delete().eq("id", msg.id);
+      if (error) {
+        toast.error(t("deleteFailed"));
+        return;
+      }
+      onMessagesLoaded(messages.filter((m) => m.id !== msg.id));
+      toast.success(t("deleted"));
+    },
+    [messages, onMessagesLoaded, t],
+  );
 
   // Account-level AI auto-reply status (cached per account by the
   // banner's helper). Drives the composer lock: while the bot owns the
@@ -1148,6 +1206,7 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onDelete={() => void handleDeleteMessage(msg)}
                       >
                         <MessageBubble
                           message={msg}
@@ -1155,6 +1214,11 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          templateButtons={
+                            msg.template_name
+                              ? templateButtonsByName[msg.template_name]
+                              : undefined
+                          }
                         />
                       </MessageActions>
                     );
