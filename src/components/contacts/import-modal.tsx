@@ -47,6 +47,18 @@ import { useTranslations } from 'next-intl';
 const DEFAULT_TAG_COLOR = '#3b82f6';
 const PREVIEW_LIMIT = 5;
 
+type RowStatus = 'new' | 'dupFile' | 'exists';
+
+/** Digits-only + last-10 suffix keys, so "94204 88741" still matches a
+ *  stored "+919420488741" (the mismatch that once produced a duplicate
+ *  contact). */
+function phoneMatchKeys(phone: string): string[] {
+  const digits = phone.replace(/\D/g, '');
+  const keys = [digits];
+  if (digits.length > 10) keys.push(digits.slice(-10));
+  return keys;
+}
+
 function truncateFilename(name: string, max = 48): string {
   if (name.length <= max) return name;
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
@@ -120,6 +132,36 @@ function ImportPreviewTags({
   );
 }
 
+function RowStatusBadge({
+  status,
+  t,
+}: {
+  status: RowStatus;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const styles: Record<RowStatus, string> = {
+    new: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25',
+    dupFile: 'bg-amber-500/10 text-amber-400 border-amber-500/25',
+    exists: 'bg-blue-500/10 text-blue-400 border-blue-500/25',
+  };
+  const labels: Record<RowStatus, string> = {
+    new: t('statusNew'),
+    dupFile: t('statusDupFile'),
+    exists: t('statusExists'),
+  };
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium',
+        styles[status]
+      )}
+      title={status === 'exists' ? t('statusExistsHint') : undefined}
+    >
+      {labels[status]}
+    </span>
+  );
+}
+
 interface ImportModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -147,6 +189,12 @@ export function ImportModal({
     new Map()
   );
   const [importing, setImporting] = useState(false);
+  // Existing contacts' phone keys (digits + last-10 suffix) → contact id,
+  // loaded when a file is picked. Powers the "already in contacts"
+  // marking in the preview AND the skip/refresh decision at import.
+  const [existingKeyToId, setExistingKeyToId] = useState<Map<string, string>>(
+    new Map()
+  );
   const [result, setResult] = useState<{
     imported: number;
     skipped: number;
@@ -155,6 +203,34 @@ export function ImportModal({
     customValues: number;
   } | null>(null);
 
+  // Per-row duplicate status for the preview, recomputed when the
+  // country code changes (normalization affects matching).
+  const rowStatuses = useMemo<RowStatus[]>(() => {
+    const seenInFile = new Set<string>();
+    return parsedRows.map((row) => {
+      const norm = normalizeImportPhone(row.phone, countryCode);
+      const keys = phoneMatchKeys(norm);
+      const canonical = keys[keys.length - 1] ?? '';
+      let status: RowStatus = 'new';
+      if (canonical && seenInFile.has(canonical)) {
+        status = 'dupFile';
+      } else if (keys.some((k) => existingKeyToId.has(k))) {
+        status = 'exists';
+      }
+      if (canonical) seenInFile.add(canonical);
+      return status;
+    });
+  }, [parsedRows, countryCode, existingKeyToId]);
+
+  const statusCounts = useMemo(
+    () => ({
+      new: rowStatuses.filter((s) => s === 'new').length,
+      dupFile: rowStatuses.filter((s) => s === 'dupFile').length,
+      exists: rowStatuses.filter((s) => s === 'exists').length,
+    }),
+    [rowStatuses]
+  );
+
   function reset() {
     setFile(null);
     setParsedRows([]);
@@ -162,6 +238,7 @@ export function ImportModal({
     setHasCompanyColumn(false);
     setCustomColumns([]);
     setTagColorByKey(new Map());
+    setExistingKeyToId(new Map());
     setResult(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
@@ -200,6 +277,26 @@ export function ImportModal({
     setHasTagsColumn(csvHasTags);
     setHasCompanyColumn(csvHasCompany);
     setCustomColumns(csvCustomColumns);
+
+    // Load existing contacts so the preview can flag rows that are
+    // already in the CRM (matched by digits or last-10 suffix).
+    if (accountId) {
+      const { data: existing } = await supabase
+        .from('contacts')
+        .select('id, phone_normalized')
+        .eq('account_id', accountId);
+      const map = new Map<string, string>();
+      for (const r of (existing ?? []) as {
+        id: string;
+        phone_normalized: string | null;
+      }[]) {
+        if (!r.phone_normalized) continue;
+        for (const k of phoneMatchKeys(r.phone_normalized)) {
+          if (!map.has(k)) map.set(k, r.id);
+        }
+      }
+      setExistingKeyToId(map);
+    }
 
     if (csvHasTags && accountId) {
       const { data: tags } = await supabase
@@ -259,10 +356,10 @@ export function ImportModal({
       const { unique, duplicates: inFileDupes } = dedupeByPhone(normalizedRows);
       skipped += inFileDupes;
 
-      // 2) Skip numbers already in this account. One read of the
-      //    generated `phone_normalized` column (migration 022) → map of
-      //    normalized phone → id, so skipped rows can still refresh
-      //    their custom field values below.
+      // 2) Skip numbers already in this account. Fresh read (the
+      //    preview map may be stale if contacts changed since the file
+      //    was picked), keyed by digits AND last-10 suffix so a format
+      //    difference can't slip a duplicate through.
       const { data: existingRows } = await supabase
         .from('contacts')
         .select('id, phone_normalized')
@@ -272,13 +369,23 @@ export function ImportModal({
         id: string;
         phone_normalized: string | null;
       }[]) {
-        if (r.phone_normalized) existingIdByPhone.set(r.phone_normalized, r.id);
+        if (!r.phone_normalized) continue;
+        for (const k of phoneMatchKeys(r.phone_normalized)) {
+          if (!existingIdByPhone.has(k)) existingIdByPhone.set(k, r.id);
+        }
       }
+      const findExistingId = (phone: string): string | undefined => {
+        for (const k of phoneMatchKeys(normalizeKey(phone))) {
+          const id = existingIdByPhone.get(k);
+          if (id) return id;
+        }
+        return undefined;
+      };
 
       const customAssignments: ContactCustomAssignment[] = [];
 
       const toInsert = unique.filter((row) => {
-        const existingId = existingIdByPhone.get(normalizeKey(row.phone));
+        const existingId = findExistingId(row.phone);
         if (existingId) {
           skipped++;
           // Contact row untouched, but a re-import still refreshes its
@@ -557,6 +664,13 @@ export function ImportModal({
                   {t('preview', { count: preview.length })}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-[11px] text-muted-foreground">
+                    {t('previewStatusCounts', {
+                      news: statusCounts.new,
+                      dups: statusCounts.dupFile,
+                      exists: statusCounts.exists,
+                    })}
+                  </span>
                   {tagStats.rowsWithTags > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-[11px] text-muted-foreground">
                       <Tag className="text-primary/80 size-3" />
@@ -596,6 +710,9 @@ export function ImportModal({
                     <thead>
                       <tr className="border-b border-border bg-background/60">
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
+                          {t('columns.status')}
+                        </th>
+                        <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
                           {t('columns.phone')}
                         </th>
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
@@ -631,6 +748,9 @@ export function ImportModal({
                           key={i}
                           className="bg-popover/40 transition-colors hover:bg-muted/30"
                         >
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <RowStatusBadge status={rowStatuses[i] ?? 'new'} t={t} />
+                          </td>
                           <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
                             <PreviewCell
                               value={row.phone}

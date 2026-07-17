@@ -454,7 +454,8 @@
         "name": "Name",
         "email": "Email",
         "company": "Company",
-        "tags": "Tags"
+        "tags": "Tags",
+        "status": "Status"
       },
       "cancel": "Cancel",
       "close": "Close",
@@ -480,7 +481,12 @@
       "toastCustomColsSkipped": "No permission to create custom fields: {names}",
       "countryCodeLabel": "Country code",
       "countryCodeHint": "Applied to numbers without a country code (and numbers starting with 0). Spaces and dashes are removed automatically.",
-      "toastNoValidPhones": "No valid phone numbers found. Check the phone column — cells showing #ERROR! mean Google Sheets broke the number (avoid typing + in Sheets; use the country code box here instead)."
+      "toastNoValidPhones": "No valid phone numbers found. Check the phone column — cells showing #ERROR! mean Google Sheets broke the number (avoid typing + in Sheets; use the country code box here instead).",
+      "statusNew": "New",
+      "statusDupFile": "Duplicate in file",
+      "statusExists": "Already in contacts",
+      "statusExistsHint": "This number matches an existing contact. The contact will not be duplicated; its custom field values will be refreshed from this row.",
+      "previewStatusCounts": "{news} new · {dups} duplicate(s) · {exists} already in contacts"
     },
     "customFields": {
       "title": "Custom fields",
