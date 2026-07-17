@@ -146,7 +146,9 @@ export default function ContactsPage() {
       { id: 'name', kind: 'name', label: t('tableColumns.name') },
       { id: 'phone', kind: 'phone', label: t('tableColumns.phone') },
       { id: 'email', kind: 'email', label: t('tableColumns.email'), className: 'hidden md:table-cell' },
-      { id: 'company', kind: 'company', label: t('tableColumns.company'), className: 'hidden lg:table-cell' },
+      // min-w keeps the column wide enough that the 2-line clamp wraps
+      // at full sentences, not after every word.
+      { id: 'company', kind: 'company', label: t('tableColumns.company'), className: 'hidden lg:table-cell min-w-[18rem]' },
       ...customFields.map((f): ColDef => ({
         id: f.id,
         kind: 'custom',
@@ -873,7 +875,7 @@ export default function ContactsPage() {
                         return (
                           <TableCell
                             key={col.id}
-                            className={`text-muted-foreground max-w-[16rem] text-sm ${col.className ?? ''}`}
+                            className={`text-muted-foreground max-w-[18rem] text-sm ${col.className ?? ''}`}
                             title={contact.company || undefined}
                           >
                             {contact.company ? (
