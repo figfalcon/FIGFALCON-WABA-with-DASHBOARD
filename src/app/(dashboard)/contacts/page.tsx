@@ -429,6 +429,17 @@ export default function ContactsPage() {
             />
           </div>
 
+          {canEditSettings && (
+            <Button
+              variant="outline"
+              onClick={() => setCustomFieldsOpen(true)}
+              className="border-border text-muted-foreground hover:bg-muted shrink-0"
+              title={t('editColumnsTitle')}
+            >
+              <SlidersHorizontal className="size-4" />
+              {t('editColumnsBtn')}
+            </Button>
+          )}
           <Popover>
             <PopoverTrigger
               render={

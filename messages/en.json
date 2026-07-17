@@ -331,7 +331,9 @@
       "toastFailedDelete": "Failed to delete contact",
       "toastDeleted": "Contact deleted",
       "toastBulkFailedDelete": "Failed to delete contacts",
-      "toastBulkDeleted": "{count} contacts deleted"
+      "toastBulkDeleted": "{count} contacts deleted",
+      "editColumnsBtn": "Edit columns",
+      "editColumnsTitle": "Rename, reorder, or delete custom field columns"
     },
     "form": {
       "addTitle": "Add Contact",
