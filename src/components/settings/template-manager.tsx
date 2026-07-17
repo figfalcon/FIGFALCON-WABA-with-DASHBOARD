@@ -713,8 +713,9 @@ export function TemplateManager() {
                       category: val as MessageTemplate['category'],
                     })
                   }
+                  disabled={editingId !== null}
                 >
-                  <SelectTrigger className="w-full bg-muted border-border text-foreground">
+                  <SelectTrigger className="w-full bg-muted border-border text-foreground disabled:opacity-60 disabled:cursor-not-allowed">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-popover border-border">
@@ -729,6 +730,11 @@ export function TemplateManager() {
                     ))}
                   </SelectContent>
                 </Select>
+                {editingId !== null && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {t('categoryFixed')}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

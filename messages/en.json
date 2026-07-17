@@ -1370,6 +1370,7 @@
       "nameFixed": "Name is fixed once a template exists on Meta — create a new template to change it.",
       "nameHint": "Lowercase letters, digits, and underscores only.",
       "category": "Category",
+      "categoryFixed": "Category cannot be changed after approval. Meta assigns it from the content during review.",
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
       "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
