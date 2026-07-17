@@ -571,14 +571,21 @@ export function ImportModal({
                       {t('previewCustom', { names: customColumns.join(', ') })}
                     </span>
                   )}
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                </div>
+
+                {/* Country code — prominent, right above the preview so
+                    it can't be missed before hitting Import. */}
+                <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2">
+                  <span className="text-sm font-medium text-foreground">
                     {t('countryCodeLabel')}
-                    <input
-                      value={countryCode}
-                      onChange={(e) => setCountryCode(e.target.value)}
-                      className="h-6 w-14 rounded-md border border-border bg-muted px-1.5 text-center text-[11px] text-foreground outline-none focus:border-primary"
-                      title={t('countryCodeHint')}
-                    />
+                  </span>
+                  <input
+                    value={countryCode}
+                    onChange={(e) => setCountryCode(e.target.value)}
+                    className="h-8 w-20 rounded-md border border-border bg-muted px-2 text-center text-sm text-foreground outline-none focus:border-primary"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {t('countryCodeHint')}
                   </span>
                 </div>
               </div>

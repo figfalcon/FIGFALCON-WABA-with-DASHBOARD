@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
 import type { Contact, CustomField, Tag, ContactTag } from '@/types';
+import { sortCustomFields } from '@/lib/contacts/sort-custom-fields';
 import {
   findExistingContact,
   isExactMatch,
@@ -126,7 +127,7 @@ export function ContactForm({
       .from('custom_fields')
       .select('*')
       .order('field_name');
-    setCustomFields((fields as CustomField[] | null) ?? []);
+    setCustomFields(sortCustomFields((fields as CustomField[] | null) ?? []));
 
     // Editing: preload this contact's existing values.
     const values: Record<string, string> = {};

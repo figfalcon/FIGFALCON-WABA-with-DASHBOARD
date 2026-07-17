@@ -498,7 +498,10 @@
       "toastCreated": "Created \"{name}\".",
       "toastRenameFailed": "Could not rename field.",
       "toastDeleteFailed": "Could not delete field.",
-      "toastDeleted": "Deleted \"{name}\"."
+      "toastDeleted": "Deleted \"{name}\".",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "toastReorderFailed": "Could not save the new order."
     }
   },
   "Pipelines": {

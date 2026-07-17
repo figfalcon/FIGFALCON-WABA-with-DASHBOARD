@@ -137,6 +137,8 @@ export interface CustomField {
   field_name: string;
   field_type: string;
   field_options?: Record<string, unknown>;
+  /** Column position (migration 039). Lower first; ties break by name. */
+  sort_order?: number;
   created_at: string;
 }
 

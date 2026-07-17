@@ -54,6 +54,7 @@ import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
+import { sortCustomFields } from '@/lib/contacts/sort-custom-fields';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
@@ -113,7 +114,7 @@ export default function ContactsPage() {
       .from('custom_fields')
       .select('*')
       .order('field_name');
-    setCustomFields((data as CustomField[] | null) ?? []);
+    setCustomFields(sortCustomFields((data as CustomField[] | null) ?? []));
   }, [supabase]);
 
   const fetchTags = useCallback(async () => {

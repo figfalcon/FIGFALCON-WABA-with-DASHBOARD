@@ -14,8 +14,9 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { sortCustomFields } from '@/lib/contacts/sort-custom-fields';
 
 interface CustomFieldsManagerProps {
   open: boolean;
@@ -72,7 +73,7 @@ export function CustomFieldsPanel() {
       .from('custom_fields')
       .select('*')
       .order('field_name');
-    setFields((data as CustomField[] | null) ?? []);
+    setFields(sortCustomFields((data as CustomField[] | null) ?? []));
     setLoading(false);
   }, [supabase, accountId]);
 
@@ -150,6 +151,37 @@ export function CustomFieldsPanel() {
     return true;
   }
 
+  /** Move a field one slot up/down and persist the whole order as
+   *  0..n-1 so positions stay dense regardless of history. */
+  async function handleMove(field: CustomField, dir: -1 | 1) {
+    const idx = fields.findIndex((f) => f.id === field.id);
+    const target = idx + dir;
+    if (idx < 0 || target < 0 || target >= fields.length) return;
+
+    const next = [...fields];
+    [next[idx], next[target]] = [next[target], next[idx]];
+
+    setBusyId(field.id);
+    let failed = false;
+    for (let i = 0; i < next.length; i++) {
+      if ((next[i].sort_order ?? 0) === i) continue;
+      const { error } = await supabase
+        .from('custom_fields')
+        .update({ sort_order: i })
+        .eq('id', next[i].id);
+      if (error) {
+        failed = true;
+        break;
+      }
+    }
+    setBusyId(null);
+    if (failed) {
+      toast.error(t('toastReorderFailed'));
+      return;
+    }
+    setFields(next.map((f, i) => ({ ...f, sort_order: i })));
+  }
+
   async function handleDelete(field: CustomField) {
     if (
       !window.confirm(
@@ -215,13 +247,16 @@ export function CustomFieldsPanel() {
           </p>
         ) : (
           <ul className="divide-y divide-border">
-            {fields.map((field) => (
+            {fields.map((field, i) => (
               <FieldRow
                 key={field.id}
                 field={field}
                 busy={busyId === field.id}
                 onRename={handleRename}
                 onDelete={handleDelete}
+                onMove={handleMove}
+                isFirst={i === 0}
+                isLast={i === fields.length - 1}
               />
             ))}
           </ul>
@@ -238,11 +273,17 @@ function FieldRow({
   busy,
   onRename,
   onDelete,
+  onMove,
+  isFirst,
+  isLast,
 }: {
   field: CustomField;
   busy: boolean;
   onRename: (field: CustomField, name: string) => Promise<boolean>;
   onDelete: (field: CustomField) => void;
+  onMove: (field: CustomField, dir: -1 | 1) => void;
+  isFirst: boolean;
+  isLast: boolean;
 }) {
   const t = useTranslations('Contacts.customFields');
   const [name, setName] = useState(field.field_name);
@@ -269,6 +310,26 @@ function FieldRow({
         aria-label={t('renameAria', { name: field.field_name })}
         className="focus:border-primary h-8 border-transparent bg-transparent text-foreground hover:border-border"
       />
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        disabled={busy || isFirst}
+        onClick={() => onMove(field, -1)}
+        title={t('moveUp')}
+        className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-30"
+      >
+        <ChevronUp className="size-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        disabled={busy || isLast}
+        onClick={() => onMove(field, 1)}
+        title={t('moveDown')}
+        className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-30"
+      >
+        <ChevronDown className="size-4" />
+      </Button>
       <Button
         variant="ghost"
         size="icon-sm"
