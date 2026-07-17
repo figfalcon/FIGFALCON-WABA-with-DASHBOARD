@@ -22,9 +22,11 @@ export function normalizeImportPhone(raw: string, countryCode: string): string {
 
   p = p.replace(/^0+/, '');
 
-  // Already starts with the country code digits and is long enough to
-  // actually contain a subscriber number after them → just prefix "+".
-  if (ccDigits && p.startsWith(ccDigits) && p.length >= ccDigits.length + 8) {
+  // Already starts with the country code digits AND is longer than a
+  // bare 10-digit subscriber number → just prefix "+". The length gate
+  // matters: an Indian mobile like 9160282718 begins with "91" but is
+  // a bare number, not a prefixed one.
+  if (ccDigits && p.startsWith(ccDigits) && p.length > 10) {
     return '+' + p;
   }
 
