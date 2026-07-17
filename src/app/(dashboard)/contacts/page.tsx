@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Contact, CustomField, Tag, ContactTag } from '@/types';
@@ -56,6 +56,7 @@ import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { sortCustomFields } from '@/lib/contacts/sort-custom-fields';
 import { useCan } from '@/hooks/use-can';
+import { useAuth } from '@/hooks/use-auth';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
 
@@ -72,6 +73,7 @@ export default function ContactsPage() {
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
+  const { accountId } = useAuth();
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,6 +104,81 @@ export default function ContactsPage() {
 
   // Custom field definitions — each becomes a table column.
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
+
+  // ── Draggable column order (built-ins + custom fields) ─────────
+  // Saved per account in localStorage; unknown/new columns append in
+  // their natural position, deleted ones drop out automatically.
+  const [colOrder, setColOrder] = useState<string[] | null>(null);
+  const [dragColId, setDragColId] = useState<string | null>(null);
+  const [overColId, setOverColId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!accountId) return;
+    try {
+      const raw = localStorage.getItem(`contacts-cols:${accountId}`);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (raw) setColOrder(JSON.parse(raw) as string[]);
+    } catch {
+      // corrupted saved order — fall back to the default
+    }
+  }, [accountId]);
+
+  interface ColDef {
+    id: string;
+    kind: 'name' | 'phone' | 'email' | 'company' | 'tags' | 'created' | 'custom';
+    label: string;
+    className?: string;
+    field?: CustomField;
+  }
+
+  const columns: ColDef[] = useMemo(() => {
+    const defs: ColDef[] = [
+      { id: 'name', kind: 'name', label: t('tableColumns.name') },
+      { id: 'phone', kind: 'phone', label: t('tableColumns.phone') },
+      { id: 'email', kind: 'email', label: t('tableColumns.email'), className: 'hidden md:table-cell' },
+      { id: 'company', kind: 'company', label: t('tableColumns.company'), className: 'hidden lg:table-cell' },
+      ...customFields.map((f): ColDef => ({
+        id: f.id,
+        kind: 'custom',
+        label: f.field_name,
+        className: 'hidden lg:table-cell',
+        field: f,
+      })),
+      { id: 'tags', kind: 'tags', label: t('tableColumns.tags'), className: 'hidden md:table-cell' },
+      { id: 'created', kind: 'created', label: t('tableColumns.createdAt'), className: 'hidden lg:table-cell' },
+    ];
+    if (!colOrder) return defs;
+    const byId = new Map(defs.map((d) => [d.id, d]));
+    const ordered: ColDef[] = [];
+    for (const id of colOrder) {
+      const d = byId.get(id);
+      if (d) {
+        ordered.push(d);
+        byId.delete(id);
+      }
+    }
+    for (const d of defs) {
+      if (byId.has(d.id)) ordered.push(d);
+    }
+    return ordered;
+  }, [customFields, colOrder, t]);
+
+  function handleColumnDrop() {
+    if (dragColId && overColId && dragColId !== overColId) {
+      const ids = columns.map((c) => c.id);
+      const from = ids.indexOf(dragColId);
+      const to = ids.indexOf(overColId);
+      if (from >= 0 && to >= 0) {
+        ids.splice(to, 0, ids.splice(from, 1)[0]);
+        setColOrder(ids);
+        if (accountId) {
+          localStorage.setItem(`contacts-cols:${accountId}`, JSON.stringify(ids));
+        }
+      }
+    }
+    setDragColId(null);
+    setOverColId(null);
+  }
 
   // Guards against out-of-order fetch responses: each fetchContacts run
   // claims a sequence number and only the latest is allowed to commit its
@@ -581,28 +658,46 @@ export default function ContactsPage() {
                   aria-label="Select all contacts on this page"
                 />
               </TableHead>
-              <TableHead className="text-muted-foreground">{t('tableColumns.name')}</TableHead>
-              <TableHead className="text-muted-foreground">{t('tableColumns.phone')}</TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.company')}</TableHead>
-              {customFields.map((field) => (
+              {columns.map((col) => (
                 <TableHead
-                  key={field.id}
-                  className="text-muted-foreground hidden whitespace-nowrap lg:table-cell"
-                  title={field.field_name}
+                  key={col.id}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDragColId(col.id);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    setOverColId(col.id);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleColumnDrop();
+                  }}
+                  onDragEnd={() => {
+                    setDragColId(null);
+                    setOverColId(null);
+                  }}
+                  title={t('dragColumnHint', { name: col.label })}
+                  className={`text-muted-foreground cursor-grab whitespace-nowrap select-none active:cursor-grabbing ${
+                    col.className ?? ''
+                  } ${dragColId === col.id ? 'opacity-40' : ''} ${
+                    overColId === col.id && dragColId && dragColId !== col.id
+                      ? 'bg-primary/10'
+                      : ''
+                  }`}
                 >
-                  {field.field_name}
+                  {col.label}
                 </TableHead>
               ))}
-              <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
               <TableHead className="text-muted-foreground w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8 + customFields.length} className="text-center py-12">
+                <TableCell colSpan={2 + columns.length} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">{t('loading')}</p>
@@ -611,7 +706,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8 + customFields.length} className="text-center py-12">
+                <TableCell colSpan={2 + columns.length} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -649,61 +744,84 @@ export default function ContactsPage() {
                       aria-label={`Select ${contact.name || contact.phone}`}
                     />
                   </TableCell>
-                  <TableCell className="text-foreground font-medium">
-                    {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs">
-                    {contact.phone}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden md:table-cell text-sm">
-                    {contact.email || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden lg:table-cell text-sm">
-                    {contact.company || <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  {customFields.map((field) => (
-                    <TableCell
-                      key={field.id}
-                      className="text-muted-foreground hidden max-w-[10rem] truncate text-sm lg:table-cell"
-                      title={contact.customValues?.[field.id] || undefined}
-                    >
-                      {contact.customValues?.[field.id] || (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                  ))}
-                  <TableCell className="hidden md:table-cell">
-                    <div className="flex flex-wrap gap-1">
-                      {contact.tags && contact.tags.length > 0 ? (
-                        contact.tags.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag.id}
-                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
-                            }}
+                  {columns.map((col) => {
+                    switch (col.kind) {
+                      case 'name':
+                        return (
+                          <TableCell key={col.id} className="text-foreground font-medium">
+                            {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
+                          </TableCell>
+                        );
+                      case 'phone':
+                        return (
+                          <TableCell key={col.id} className="text-muted-foreground font-mono text-xs">
+                            {contact.phone}
+                          </TableCell>
+                        );
+                      case 'email':
+                        return (
+                          <TableCell key={col.id} className={`text-muted-foreground text-sm ${col.className ?? ''}`}>
+                            {contact.email || <span className="text-muted-foreground">-</span>}
+                          </TableCell>
+                        );
+                      case 'company':
+                        return (
+                          <TableCell key={col.id} className={`text-muted-foreground text-sm ${col.className ?? ''}`}>
+                            {contact.company || <span className="text-muted-foreground">-</span>}
+                          </TableCell>
+                        );
+                      case 'custom':
+                        return (
+                          <TableCell
+                            key={col.id}
+                            className={`text-muted-foreground max-w-[10rem] truncate text-sm ${col.className ?? ''}`}
+                            title={contact.customValues?.[col.id] || undefined}
                           >
-                            {tag.name}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
-                      )}
-                      {contact.tags && contact.tags.length > 3 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          +{contact.tags.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs hidden lg:table-cell">
-                    {new Date(contact.created_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </TableCell>
+                            {contact.customValues?.[col.id] || (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                        );
+                      case 'tags':
+                        return (
+                          <TableCell key={col.id} className={col.className}>
+                            <div className="flex flex-wrap gap-1">
+                              {contact.tags && contact.tags.length > 0 ? (
+                                contact.tags.slice(0, 3).map((tag) => (
+                                  <span
+                                    key={tag.id}
+                                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                                    style={{
+                                      backgroundColor: tag.color + '20',
+                                      color: tag.color,
+                                    }}
+                                  >
+                                    {tag.name}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-muted-foreground text-xs">-</span>
+                              )}
+                              {contact.tags && contact.tags.length > 3 && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  +{contact.tags.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                        );
+                      case 'created':
+                        return (
+                          <TableCell key={col.id} className={`text-muted-foreground text-xs ${col.className ?? ''}`}>
+                            {new Date(contact.created_at).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                          </TableCell>
+                        );
+                    }
+                  })}
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger
