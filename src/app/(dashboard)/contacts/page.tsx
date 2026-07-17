@@ -127,7 +127,15 @@ export default function ContactsPage() {
 
   interface ColDef {
     id: string;
-    kind: 'name' | 'phone' | 'email' | 'company' | 'tags' | 'created' | 'custom';
+    kind:
+      | 'name'
+      | 'phone'
+      | 'email'
+      | 'company'
+      | 'tags'
+      | 'created'
+      | 'custom'
+      | 'send';
     label: string;
     className?: string;
     field?: CustomField;
@@ -148,6 +156,7 @@ export default function ContactsPage() {
       })),
       { id: 'tags', kind: 'tags', label: t('tableColumns.tags'), className: 'hidden md:table-cell' },
       { id: 'created', kind: 'created', label: t('tableColumns.createdAt'), className: 'hidden lg:table-cell' },
+      { id: 'send', kind: 'send', label: t('sendTemplateCol') },
     ];
     if (!colOrder) return defs;
     const byId = new Map(defs.map((d) => [d.id, d]));
@@ -787,16 +796,13 @@ export default function ContactsPage() {
                   {col.label}
                 </TableHead>
               ))}
-              <TableHead className="text-muted-foreground whitespace-nowrap">
-                {t('sendTemplateCol')}
-              </TableHead>
               <TableHead className="text-muted-foreground w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={3 + columns.length} className="text-center py-12">
+                <TableCell colSpan={2 + columns.length} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">{t('loading')}</p>
@@ -805,7 +811,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={3 + columns.length} className="text-center py-12">
+                <TableCell colSpan={2 + columns.length} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -865,8 +871,18 @@ export default function ContactsPage() {
                         );
                       case 'company':
                         return (
-                          <TableCell key={col.id} className={`text-muted-foreground text-sm ${col.className ?? ''}`}>
-                            {contact.company || <span className="text-muted-foreground">-</span>}
+                          <TableCell
+                            key={col.id}
+                            className={`text-muted-foreground max-w-[16rem] text-sm ${col.className ?? ''}`}
+                            title={contact.company || undefined}
+                          >
+                            {contact.company ? (
+                              <span className="line-clamp-2 whitespace-normal break-words">
+                                {contact.company}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
                           </TableCell>
                         );
                       case 'custom':
@@ -919,33 +935,36 @@ export default function ContactsPage() {
                             })}
                           </TableCell>
                         );
+                      case 'send': {
+                        const tplName = quickSendTemplateFor(contact);
+                        return (
+                          <TableCell
+                            key={col.id}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={!canEdit || !tplName}
+                              onClick={() =>
+                                tplName &&
+                                setQuickSendTarget({ contact, templateName: tplName })
+                              }
+                              title={
+                                tplName
+                                  ? t('quickSendTitle', { template: tplName })
+                                  : t('quickSendNoRoute')
+                              }
+                              className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                            >
+                              <Send className="size-3.5" />
+                              {t('quickSendBtn')}
+                            </Button>
+                          </TableCell>
+                        );
+                      }
                     }
                   })}
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    {(() => {
-                      const tplName = quickSendTemplateFor(contact);
-                      return (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!canEdit || !tplName}
-                          onClick={() =>
-                            tplName &&
-                            setQuickSendTarget({ contact, templateName: tplName })
-                          }
-                          title={
-                            tplName
-                              ? t('quickSendTitle', { template: tplName })
-                              : t('quickSendNoRoute')
-                          }
-                          className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                        >
-                          <Send className="size-3.5" />
-                          {t('quickSendBtn')}
-                        </Button>
-                      );
-                    })()}
-                  </TableCell>
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger
@@ -1093,17 +1112,45 @@ export default function ContactsPage() {
               {t('quickSendConfirmTitle')}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {quickSendTarget &&
-                t('quickSendConfirmDesc', {
-                  template: quickSendTarget.templateName,
-                  name:
-                    quickSendTarget.contact.name ||
-                    quickSendTarget.contact.company ||
-                    quickSendTarget.contact.phone,
-                  phone: quickSendTarget.contact.phone,
-                })}
+              {quickSendTarget && (
+                <>
+                  {t('quickSendConfirmPrefix')}{' '}
+                  <span className="font-bold text-red-400">
+                    {quickSendTarget.templateName}
+                  </span>{' '}
+                  {t('quickSendConfirmSuffix', {
+                    name:
+                      quickSendTarget.contact.name ||
+                      quickSendTarget.contact.company ||
+                      quickSendTarget.contact.phone,
+                    phone: quickSendTarget.contact.phone,
+                  })}
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
+          {quickSendTarget && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                {t('quickSendTemplateLabel')}
+              </label>
+              <select
+                value={quickSendTarget.templateName}
+                onChange={(e) =>
+                  setQuickSendTarget((prev) =>
+                    prev ? { ...prev, templateName: e.target.value } : prev,
+                  )
+                }
+                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+              >
+                {[...templatesByName.keys()].sort().map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <DialogFooter className="bg-popover border-border">
             <Button
               variant="outline"

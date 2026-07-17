@@ -340,10 +340,12 @@
       "quickSendTitle": "Sends {template} (chosen from this contact's tags)",
       "quickSendNoRoute": "No template mapped for this contact's tags. Add an interest tag, Cold Lead, or test_broadcast first.",
       "quickSendConfirmTitle": "Send template?",
-      "quickSendConfirmDesc": "Send \"{template}\" to {name} ({phone})? The template was selected automatically from the contact's tags.",
       "quickSendConfirmBtn": "Send now",
       "toastQuickSendOk": "Sent {template} to {name}",
-      "toastQuickSendFailed": "Send failed: {error}"
+      "toastQuickSendFailed": "Send failed: {error}",
+      "quickSendConfirmPrefix": "Send",
+      "quickSendConfirmSuffix": "to {name} ({phone})? The template was selected from the contact's tags. You can change it below.",
+      "quickSendTemplateLabel": "Template to send"
     },
     "form": {
       "addTitle": "Add Contact",
