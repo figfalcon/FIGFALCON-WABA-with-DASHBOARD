@@ -36,11 +36,6 @@ interface ConversationListProps {
   resyncToken?: number;
 }
 
-const STATUS_COLORS: Record<ConversationStatus, string> = {
-  open: "bg-primary",
-  pending: "bg-amber-500",
-  closed: "bg-muted-foreground",
-};
 
 
 
@@ -483,20 +478,19 @@ function ConversationItem({
           <p className="truncate text-xs text-muted-foreground">
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {conversation.unread_count > 0 && (
+          {/* Unread indicator only — a WhatsApp-style blue dot + count
+              that disappear entirely once the thread has been opened.
+              (The old always-on status dot read as a false "unread"
+              signal on every row; status still lives in the thread
+              header and the list's status filter.) */}
+          {conversation.unread_count > 0 && (
+            <div className="flex shrink-0 items-center gap-1.5">
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                 {conversation.unread_count}
               </span>
-            )}
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_COLORS[conversation.status]
-              )}
-              title={conversation.status}
-            />
-          </div>
+              <span className="h-2 w-2 rounded-full bg-primary" />
+            </div>
+          )}
         </div>
       </div>
     </button>
