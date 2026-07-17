@@ -126,8 +126,10 @@ export function buildSystemPrompt(args: {
   knowledge?: string[]
   /** The conversation's current service focus ("sub-agent"), if any. */
   serviceFocus?: ServiceFocus | null
+  /** The customer's known name (from their WhatsApp profile or CRM). */
+  contactName?: string | null
 }): string {
-  const { userPrompt, mode, knowledge, serviceFocus } = args
+  const { userPrompt, mode, knowledge, serviceFocus, contactName } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -148,6 +150,11 @@ export function buildSystemPrompt(args: {
     parts.push(
       `After writing your reply, decide if this turn makes the lead's interest level newly clear. If they just gave a clear positive signal (agreed to a call/demo, said yes to seeing more, asked to move forward, or is actively asking for help with a problem the business's services solve) and you have not already flagged this, append ${INTERESTED_SENTINEL} at the very end of your message, after the customer-facing text. If they just clearly declined or opted out (said not interested, no, stop, remove me) append ${NOT_INTERESTED_SENTINEL} instead. Only use one of these when the signal is genuinely clear from what they just said — most turns get neither. Never mention these markers to the customer; they are stripped before sending.`,
     )
+    if (contactName) {
+      parts.push(
+        `The customer's name is "${contactName}". Address them by name naturally — especially when greeting — but don't repeat the name in every message.`,
+      )
+    }
     parts.push(
       'Booking link rules (strict, apply to the generalist AND every specialist): the only booking link is https://cal.com/figfalcon/figfalcon-strategy-call. ' +
         'Share it ONLY when the lead clearly CONFIRMS they want to book or see a demo, e.g. "yes, book it", "yes let\'s do the demo", "send me the link", "how do I book a call". ' +

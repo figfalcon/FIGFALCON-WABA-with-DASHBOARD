@@ -364,11 +364,34 @@ export async function dispatchInboundToAiReply(
       latestUserMessage(messages),
     )
 
+    // The customer's known name (WhatsApp profile name lands on the
+    // contact automatically) — lets the agent greet them personally.
+    // Placeholder names (bare phone numbers) are filtered out.
+    let contactName: string | null = null
+    try {
+      const { data: contactRow } = await db
+        .from('contacts')
+        .select('name, phone')
+        .eq('id', contactId)
+        .maybeSingle()
+      const rawName = contactRow?.name?.trim() ?? ''
+      if (
+        rawName &&
+        rawName !== contactRow?.phone &&
+        !/^\+?[\d\s()-]+$/.test(rawName)
+      ) {
+        contactName = rawName
+      }
+    } catch {
+      // best-effort — a lookup failure must never block the reply
+    }
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
       serviceFocus,
+      contactName,
     })
 
     // LLM call with escalating retries: attempt 1 → wait 10s → attempt 2

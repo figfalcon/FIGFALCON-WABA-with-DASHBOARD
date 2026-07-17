@@ -477,7 +477,9 @@
       "resultCustom_plural": "{count} custom field values saved",
       "toastCustomAssigned": "Saved {count} custom field value(s)",
       "toastCustomWarning": "Contacts imported, but some custom field values failed to save.",
-      "toastCustomColsSkipped": "No permission to create custom fields: {names}"
+      "toastCustomColsSkipped": "No permission to create custom fields: {names}",
+      "countryCodeLabel": "Country code",
+      "countryCodeHint": "Applied to numbers without a country code (and numbers starting with 0). Spaces and dashes are removed automatically."
     },
     "customFields": {
       "title": "Custom fields",

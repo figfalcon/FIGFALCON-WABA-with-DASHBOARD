@@ -12,6 +12,7 @@ import {
   parseContactCsv,
   type ParsedContactRow,
 } from '@/lib/contacts/parse-contact-csv';
+import { normalizeImportPhone } from '@/lib/contacts/normalize-import-phone';
 import {
   assignImportedContactTags,
   resolveImportTagIds,
@@ -140,6 +141,8 @@ export function ImportModal({
   const [hasTagsColumn, setHasTagsColumn] = useState(false);
   const [hasCompanyColumn, setHasCompanyColumn] = useState(false);
   const [customColumns, setCustomColumns] = useState<string[]>([]);
+  // Applied to numbers without one (and to trunk-0 numbers) at import.
+  const [countryCode, setCountryCode] = useState('+91');
   const [tagColorByKey, setTagColorByKey] = useState<Map<string, string>>(
     new Map()
   );
@@ -232,8 +235,15 @@ export function ImportModal({
       let skipped = 0;
       let failed = 0;
 
+      // 0) Normalize every phone to clean +CC form — no spaces/dashes,
+      //    trunk 0 resolved, default country code applied when missing.
+      const normalizedRows = parsedRows.map((row) => ({
+        ...row,
+        phone: normalizeImportPhone(row.phone, countryCode),
+      }));
+
       // 1) De-dupe within the file by normalized phone (keep first).
-      const { unique, duplicates: inFileDupes } = dedupeByPhone(parsedRows);
+      const { unique, duplicates: inFileDupes } = dedupeByPhone(normalizedRows);
       skipped += inFileDupes;
 
       // 2) Skip numbers already in this account. One read of the
@@ -548,6 +558,15 @@ export function ImportModal({
                       {t('previewCustom', { names: customColumns.join(', ') })}
                     </span>
                   )}
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    {t('countryCodeLabel')}
+                    <input
+                      value={countryCode}
+                      onChange={(e) => setCountryCode(e.target.value)}
+                      className="h-6 w-14 rounded-md border border-border bg-muted px-1.5 text-center text-[11px] text-foreground outline-none focus:border-primary"
+                      title={t('countryCodeHint')}
+                    />
+                  </span>
                 </div>
               </div>
 
