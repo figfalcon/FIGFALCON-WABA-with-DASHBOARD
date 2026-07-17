@@ -142,7 +142,19 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "select": "Select",
+      "selectCancel": "Cancel",
+      "selectTitle": "Select multiple conversations",
+      "selectedCount": "{count} selected",
+      "bulkMarkRead": "Mark as read",
+      "bulkClose": "Close (archive)",
+      "bulkDelete": "Delete",
+      "bulkDeleteConfirm": "Delete {count} conversation(s) and all their messages from the CRM? This cannot be undone. (Messages on the recipients’ phones are not affected.)",
+      "bulkMarkedRead": "{count} marked as read",
+      "bulkClosed": "{count} closed",
+      "bulkDeleted": "{count} deleted",
+      "bulkFailed": "Bulk action failed"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",

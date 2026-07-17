@@ -9,9 +9,20 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import {
+  Search,
+  ChevronDown,
+  X,
+  CheckSquare,
+  Check,
+  MailOpen,
+  Archive,
+  Trash2,
+  Loader2,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -212,6 +223,94 @@ export function ConversationList({
     [onSelect]
   );
 
+  // ── Bulk selection (mark read / close / delete) ────────────────
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const bulkMarkRead = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("conversations")
+      .update({ unread_count: 0 })
+      .in("id", ids);
+    setBulkBusy(false);
+    if (error) {
+      toast.error(t("bulkFailed"));
+      return;
+    }
+    onConversationsLoaded(
+      conversations.map((c) =>
+        selectedIds.has(c.id) ? { ...c, unread_count: 0 } : c,
+      ),
+    );
+    toast.success(t("bulkMarkedRead", { count: ids.length }));
+    exitSelectMode();
+  }, [selectedIds, conversations, onConversationsLoaded, exitSelectMode, t]);
+
+  const bulkClose = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("conversations")
+      .update({ status: "closed" })
+      .in("id", ids);
+    setBulkBusy(false);
+    if (error) {
+      toast.error(t("bulkFailed"));
+      return;
+    }
+    onConversationsLoaded(
+      conversations.map((c) =>
+        selectedIds.has(c.id) ? { ...c, status: "closed" as ConversationStatus } : c,
+      ),
+    );
+    toast.success(t("bulkClosed", { count: ids.length }));
+    exitSelectMode();
+  }, [selectedIds, conversations, onConversationsLoaded, exitSelectMode, t]);
+
+  const bulkDelete = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(t("bulkDeleteConfirm", { count: ids.length }))) return;
+    setBulkBusy(true);
+    const supabase = createClient();
+    // Deals keep a non-cascading FK to conversations — detach them
+    // first so the delete can't fail mid-way.
+    await supabase
+      .from("deals")
+      .update({ conversation_id: null })
+      .in("conversation_id", ids);
+    const { error } = await supabase.from("conversations").delete().in("id", ids);
+    setBulkBusy(false);
+    if (error) {
+      toast.error(t("bulkFailed"));
+      return;
+    }
+    onConversationsLoaded(conversations.filter((c) => !selectedIds.has(c.id)));
+    toast.success(t("bulkDeleted", { count: ids.length }));
+    exitSelectMode();
+  }, [selectedIds, conversations, onConversationsLoaded, exitSelectMode, t]);
+
   const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
 
   return (
@@ -232,6 +331,20 @@ export function ConversationList({
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
+          <button
+            type="button"
+            onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+            className={cn(
+              "inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-xs hover:bg-muted",
+              selectMode
+                ? "text-primary"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            title={t("selectTitle")}
+          >
+            <CheckSquare className="h-3.5 w-3.5" />
+            {selectMode ? t("selectCancel") : t("select")}
+          </button>
           <DropdownMenu>
             <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
                 {activeFilter?.label ?? t("filterAll")}
@@ -385,6 +498,50 @@ export function ConversationList({
         )}
       </div>
 
+      {/* Bulk action bar — shown while selecting */}
+      {selectMode && (
+        <div className="flex items-center justify-between gap-1 border-b border-border bg-muted/40 px-3 py-1.5">
+          <span className="text-xs text-foreground">
+            {t("selectedCount", { count: selectedIds.size })}
+          </span>
+          <div className="flex items-center gap-0.5">
+            {bulkBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void bulkMarkRead()}
+                  disabled={selectedIds.size === 0}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+                  title={t("bulkMarkRead")}
+                >
+                  <MailOpen className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void bulkClose()}
+                  disabled={selectedIds.size === 0}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+                  title={t("bulkClose")}
+                >
+                  <Archive className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void bulkDelete()}
+                  disabled={selectedIds.size === 0}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-red-400 disabled:opacity-30"
+                  title={t("bulkDelete")}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Conversation Items.
           `min-h-0` is load-bearing: a flex child defaults to
           min-height:auto, so without it this ScrollArea grows to fit
@@ -408,6 +565,9 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                selectMode={selectMode}
+                selected={selectedIds.has(conv.id)}
+                onToggleSelect={toggleSelected}
                 t={t}
               />
             ))}
@@ -422,6 +582,10 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  /** Bulk-selection mode: clicks toggle selection instead of opening. */
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -429,6 +593,9 @@ function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  selectMode,
+  selected,
+  onToggleSelect,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
@@ -436,8 +603,9 @@ function ConversationItem({
   const initials = displayName.charAt(0).toUpperCase();
 
   const handleClick = useCallback(() => {
-    onSelect(conversation);
-  }, [onSelect, conversation]);
+    if (selectMode) onToggleSelect(conversation.id);
+    else onSelect(conversation);
+  }, [selectMode, onToggleSelect, onSelect, conversation]);
 
   const timeAgo = conversation.last_message_at
     ? formatDistanceToNow(new Date(conversation.last_message_at), {
@@ -450,9 +618,22 @@ function ConversationItem({
       onClick={handleClick}
       className={cn(
         "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
-        isActive && "border-l-2 border-primary bg-muted/70"
+        isActive && !selectMode && "border-l-2 border-primary bg-muted/70",
+        selectMode && selected && "bg-primary/10"
       )}
     >
+      {selectMode && (
+        <span
+          className={cn(
+            "mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+            selected
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-muted-foreground/50"
+          )}
+        >
+          {selected && <Check className="h-3 w-3" />}
+        </span>
+      )}
       {/* Avatar */}
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
         {contact?.avatar_url ? (
