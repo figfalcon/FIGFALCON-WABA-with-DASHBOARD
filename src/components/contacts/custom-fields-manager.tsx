@@ -14,7 +14,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { Loader2, Plus, Trash2, GripVertical } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import { sortCustomFields } from '@/lib/contacts/sort-custom-fields';
 
@@ -151,18 +152,14 @@ export function CustomFieldsPanel() {
     return true;
   }
 
-  /** Move a field one slot up/down and persist the whole order as
-   *  0..n-1 so positions stay dense regardless of history. */
-  async function handleMove(field: CustomField, dir: -1 | 1) {
-    const idx = fields.findIndex((f) => f.id === field.id);
-    const target = idx + dir;
-    if (idx < 0 || target < 0 || target >= fields.length) return;
+  // ── Drag-and-drop reordering ──────────────────────────────────
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
 
-    const next = [...fields];
-    [next[idx], next[target]] = [next[target], next[idx]];
-
-    setBusyId(field.id);
-    let failed = false;
+  /** Persist the given order as dense 0..n-1 sort_order values. */
+  async function persistOrder(next: CustomField[]) {
+    // Optimistic — the list snaps to the new order immediately.
+    setFields(next.map((f, i) => ({ ...f, sort_order: i })));
     for (let i = 0; i < next.length; i++) {
       if ((next[i].sort_order ?? 0) === i) continue;
       const { error } = await supabase
@@ -170,16 +167,22 @@ export function CustomFieldsPanel() {
         .update({ sort_order: i })
         .eq('id', next[i].id);
       if (error) {
-        failed = true;
-        break;
+        toast.error(t('toastReorderFailed'));
+        await fetchFields(); // roll back to server truth
+        return;
       }
     }
-    setBusyId(null);
-    if (failed) {
-      toast.error(t('toastReorderFailed'));
-      return;
+  }
+
+  function handleDrop() {
+    if (dragIdx !== null && overIdx !== null && dragIdx !== overIdx) {
+      const next = [...fields];
+      const [moved] = next.splice(dragIdx, 1);
+      next.splice(overIdx, 0, moved);
+      void persistOrder(next);
     }
-    setFields(next.map((f, i) => ({ ...f, sort_order: i })));
+    setDragIdx(null);
+    setOverIdx(null);
   }
 
   async function handleDelete(field: CustomField) {
@@ -254,9 +257,15 @@ export function CustomFieldsPanel() {
                 busy={busyId === field.id}
                 onRename={handleRename}
                 onDelete={handleDelete}
-                onMove={handleMove}
-                isFirst={i === 0}
-                isLast={i === fields.length - 1}
+                dragging={dragIdx === i}
+                dropTarget={overIdx === i && dragIdx !== null && dragIdx !== i}
+                onDragStart={() => setDragIdx(i)}
+                onDragOver={() => setOverIdx(i)}
+                onDrop={handleDrop}
+                onDragEnd={() => {
+                  setDragIdx(null);
+                  setOverIdx(null);
+                }}
               />
             ))}
           </ul>
@@ -273,20 +282,29 @@ function FieldRow({
   busy,
   onRename,
   onDelete,
-  onMove,
-  isFirst,
-  isLast,
+  dragging,
+  dropTarget,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   field: CustomField;
   busy: boolean;
   onRename: (field: CustomField, name: string) => Promise<boolean>;
   onDelete: (field: CustomField) => void;
-  onMove: (field: CustomField, dir: -1 | 1) => void;
-  isFirst: boolean;
-  isLast: boolean;
+  dragging: boolean;
+  dropTarget: boolean;
+  onDragStart: () => void;
+  onDragOver: () => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
 }) {
   const t = useTranslations('Contacts.customFields');
   const [name, setName] = useState(field.field_name);
+  // Rows are only draggable while the grip is held, so selecting text
+  // in the rename input never starts a drag.
+  const [armed, setArmed] = useState(false);
 
   async function commit() {
     if (name.trim() === field.field_name) {
@@ -298,7 +316,39 @@ function FieldRow({
   }
 
   return (
-    <li className="flex items-center gap-2 px-3 py-2">
+    <li
+      draggable={armed}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move';
+        onDragStart();
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        onDragOver();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop();
+      }}
+      onDragEnd={() => {
+        setArmed(false);
+        onDragEnd();
+      }}
+      className={cn(
+        'flex items-center gap-2 px-3 py-2 transition-colors',
+        dragging && 'opacity-40',
+        dropTarget && 'bg-primary/10 ring-1 ring-inset ring-primary/40'
+      )}
+    >
+      <span
+        onMouseDown={() => setArmed(true)}
+        onMouseUp={() => setArmed(false)}
+        title={t('dragHint')}
+        className="shrink-0 cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
+      >
+        <GripVertical className="size-4" />
+      </span>
       <Input
         value={name}
         disabled={busy}
@@ -310,26 +360,6 @@ function FieldRow({
         aria-label={t('renameAria', { name: field.field_name })}
         className="focus:border-primary h-8 border-transparent bg-transparent text-foreground hover:border-border"
       />
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        disabled={busy || isFirst}
-        onClick={() => onMove(field, -1)}
-        title={t('moveUp')}
-        className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-30"
-      >
-        <ChevronUp className="size-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        disabled={busy || isLast}
-        onClick={() => onMove(field, 1)}
-        title={t('moveDown')}
-        className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-30"
-      >
-        <ChevronDown className="size-4" />
-      </Button>
       <Button
         variant="ghost"
         size="icon-sm"

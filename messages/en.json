@@ -507,9 +507,8 @@
       "toastRenameFailed": "Could not rename field.",
       "toastDeleteFailed": "Could not delete field.",
       "toastDeleted": "Deleted \"{name}\".",
-      "moveUp": "Move up",
-      "moveDown": "Move down",
-      "toastReorderFailed": "Could not save the new order."
+      "toastReorderFailed": "Could not save the new order.",
+      "dragHint": "Drag to reorder"
     }
   },
   "Pipelines": {
