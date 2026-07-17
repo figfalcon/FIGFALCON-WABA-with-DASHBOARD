@@ -15,6 +15,16 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation'
+
+/**
+ * Substitute {{N}} placeholders with the per-recipient values so the
+ * inbox shows the message exactly as the recipient received it.
+ * Unresolved placeholders are left visible rather than dropped.
+ */
+function renderTemplateBody(body: string, params: string[]): string {
+  return body.replace(/\{\{(\d+)\}\}/g, (match, n) => params[Number(n) - 1] ?? match)
+}
 
 interface BroadcastResult {
   phone: string
@@ -232,6 +242,44 @@ export async function POST(request: Request) {
           whatsapp_message_id: sentMessageId,
         })
         sentCount++
+
+        // Mirror the send into the contact's inbox thread so the team
+        // can SEE what was sent (and the status webhook can attach
+        // delivered/read ticks to it). Best-effort: a logging failure
+        // must never fail a send that Meta already accepted.
+        try {
+          const { conversationId } = await resolveConversationByPhone(
+            supabase,
+            accountId,
+            recipient.phone,
+          )
+          const renderedBody = templateRow?.body_text
+            ? renderTemplateBody(templateRow.body_text, recipient.params ?? [])
+            : `[template: ${template_name}]`
+          const nowIso = new Date().toISOString()
+          await supabase.from('messages').insert({
+            conversation_id: conversationId,
+            sender_type: 'agent',
+            content_type: 'template',
+            content_text: renderedBody,
+            template_name,
+            message_id: sentMessageId,
+            status: 'sent',
+          })
+          await supabase
+            .from('conversations')
+            .update({
+              last_message_text: renderedBody,
+              last_message_at: nowIso,
+              updated_at: nowIso,
+            })
+            .eq('id', conversationId)
+        } catch (logErr) {
+          console.error(
+            '[broadcast] failed to mirror send into inbox:',
+            logErr instanceof Error ? logErr.message : logErr,
+          )
+        }
       } else {
         console.error(
           `Failed to send broadcast to ${recipient.phone}:`,
