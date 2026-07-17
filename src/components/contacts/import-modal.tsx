@@ -237,10 +237,23 @@ export function ImportModal({
 
       // 0) Normalize every phone to clean +CC form — no spaces/dashes,
       //    trunk 0 resolved, default country code applied when missing.
-      const normalizedRows = parsedRows.map((row) => ({
-        ...row,
-        phone: normalizeImportPhone(row.phone, countryCode),
-      }));
+      //    Rows whose "phone" holds no real number (spreadsheet junk
+      //    like "#ERROR!", or fewer than 8 digits) are counted as
+      //    failed instead of becoming garbage contacts.
+      const normalizedRows: ParsedContactRow[] = [];
+      for (const row of parsedRows) {
+        const phone = normalizeImportPhone(row.phone, countryCode);
+        if (phone.replace(/\D/g, '').length < 8) {
+          failed++;
+          continue;
+        }
+        normalizedRows.push({ ...row, phone });
+      }
+      if (normalizedRows.length === 0) {
+        toast.error(t('toastNoValidPhones'));
+        setResult({ imported: 0, skipped: 0, failed, tagsAssigned: 0, customValues: 0 });
+        return;
+      }
 
       // 1) De-dupe within the file by normalized phone (keep first).
       const { unique, duplicates: inFileDupes } = dedupeByPhone(normalizedRows);
