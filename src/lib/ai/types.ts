@@ -72,6 +72,12 @@ export interface GenerateResult {
    * 'GLOBAL' hands back to the generalist; `undefined` = no change.
    */
   service?: string
+  /**
+   * Booking request from the [[BOOK:datetime|email]] marker (auto-reply
+   * mode with cal.com configured). `start` is naive IST local time
+   * "YYYY-MM-DDTHH:MM"; the pipeline books it and sends the follow-up.
+   */
+  booking?: { start: string; email: string }
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

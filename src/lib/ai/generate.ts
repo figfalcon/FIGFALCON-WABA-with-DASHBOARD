@@ -64,6 +64,9 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
  * text. `usage` is passed straight through (null when the provider
  * didn't report it).
  */
+/** [[BOOK:2026-07-21T15:00|doctor@clinic.com]] — booking request marker. */
+const BOOK_SENTINEL_RE = /\[\[BOOK:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\|([^\]\s|]+@[^\]\s|]+)\]\]/
+
 export function parseGeneration(
   raw: string,
   usage: AiUsage | null = null,
@@ -73,6 +76,10 @@ export function parseGeneration(
   if (raw.includes(INTERESTED_SENTINEL)) interest = 'yes'
   else if (raw.includes(NOT_INTERESTED_SENTINEL)) interest = 'no'
   const service = SERVICE_SENTINEL_RE.exec(raw)?.[1]
+  const bookMatch = BOOK_SENTINEL_RE.exec(raw)
+  const booking = bookMatch
+    ? { start: bookMatch[1], email: bookMatch[2] }
+    : undefined
   const text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
@@ -81,6 +88,7 @@ export function parseGeneration(
     .split(NOT_INTERESTED_SENTINEL)
     .join('')
     .replace(new RegExp(SERVICE_SENTINEL_RE.source, 'g'), '')
+    .replace(new RegExp(BOOK_SENTINEL_RE.source, 'g'), '')
     .trim()
-  return { text, handoff, interest, service, usage }
+  return { text, handoff, interest, service, booking, usage }
 }

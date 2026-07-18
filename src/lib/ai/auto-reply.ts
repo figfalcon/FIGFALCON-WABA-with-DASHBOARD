@@ -13,6 +13,7 @@ import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
+import { calcomConfigured, createCalBooking, formatIstTime } from '@/lib/calcom'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import {
   runAutomationsForTrigger,
@@ -368,12 +369,16 @@ export async function dispatchInboundToAiReply(
     // contact automatically) — lets the agent greet them personally.
     // Placeholder names (bare phone numbers) are filtered out.
     let contactName: string | null = null
+    let contactPhone: string | null = null
+    let contactCompany: string | null = null
     try {
       const { data: contactRow } = await db
         .from('contacts')
-        .select('name, phone')
+        .select('name, phone, company')
         .eq('id', contactId)
         .maybeSingle()
+      contactPhone = contactRow?.phone ?? null
+      contactCompany = contactRow?.company ?? null
       const rawName = contactRow?.name?.trim() ?? ''
       if (
         rawName &&
@@ -392,6 +397,7 @@ export async function dispatchInboundToAiReply(
       knowledge,
       serviceFocus,
       contactName,
+      bookingEnabled: calcomConfigured(),
     })
 
     // LLM call with escalating retries: attempt 1 → wait 10s → attempt 2
@@ -537,6 +543,36 @@ export async function dispatchInboundToAiReply(
       contactId,
       interest,
     })
+
+    // Booking marker → book on cal.com and send the outcome as its own
+    // message. The AI's text has already told the lead "booking now";
+    // this follow-up is the system's truthful confirmation or a
+    // pick-another-time fallback — the AI never claims success itself.
+    const booking = gen?.booking
+    if (booking && calcomConfigured()) {
+      const startIso = `${booking.start}:00+05:30`
+      const result = await createCalBooking({
+        startIso,
+        name: contactName ?? 'WhatsApp Lead',
+        email: booking.email,
+        phone: contactPhone,
+        company: contactCompany,
+      })
+      const followText = result.ok
+        ? `✅ Booked! Your call is confirmed for ${formatIstTime(result.startIso)}.\n\nCalendar invite sent to ${booking.email}.${result.meetUrl ? `\nMeeting link: ${result.meetUrl}` : ''}\n\nSee you there!`
+        : `I couldn't book that slot, it may already be taken. You can pick any free time here: https://cal.com/figfalcon/figfalcon-strategy-call or reply with another day and time and I'll try again.`
+      if (!result.ok) {
+        console.error('[ai auto-reply] cal.com booking failed:', result.error)
+      }
+      await engineSendText({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId,
+        contactId,
+        text: followText,
+        aiGenerated: true,
+      })
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }

@@ -128,8 +128,10 @@ export function buildSystemPrompt(args: {
   serviceFocus?: ServiceFocus | null
   /** The customer's known name (from their WhatsApp profile or CRM). */
   contactName?: string | null
+  /** True when cal.com booking is configured — enables the BOOK protocol. */
+  bookingEnabled?: boolean
 }): string {
-  const { userPrompt, mode, knowledge, serviceFocus, contactName } = args
+  const { userPrompt, mode, knowledge, serviceFocus, contactName, bookingEnabled } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -155,9 +157,30 @@ export function buildSystemPrompt(args: {
         `The customer's name is "${contactName}". Address them by name naturally — especially when greeting — but don't repeat the name in every message.`,
       )
     }
-    parts.push(
-      'HARD LIMIT on your abilities (never violate): you can ONLY send WhatsApp text messages. You CANNOT book appointments, create or send calendar invites, send Google Meet/Zoom links, make phone calls, or access any calendar or email. The ONLY way a meeting gets booked is the customer completing the cal.com booking link themselves, or a human teammate arranging it. NEVER say "I have booked you", "I\'ll send the invite", "I\'ll call you", or anything that promises an action you cannot perform. When a customer asks you to book a time for them: share the booking link, ask them to pick the slot there, and say the booking is confirmed only once they complete it; offer that a teammate can help if they prefer.',
-    )
+    const nowIst = new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+    parts.push(`Current date and time in India (IST): ${nowIst}. Use this to resolve words like "today" and "tomorrow".`)
+
+    if (bookingEnabled) {
+      parts.push(
+        'HARD LIMIT on your abilities: you can only send WhatsApp text messages — you cannot personally access calendars, email, Google Meet, or phones. The SYSTEM can book appointments for you, but ONLY via the booking protocol below. NEVER claim a booking is done yourself; the system sends the confirmation message automatically after it actually books.',
+      )
+      parts.push(
+        'BOOKING PROTOCOL: when the customer has clearly confirmed a specific DATE and TIME for the call AND has given their EMAIL ADDRESS in this conversation, append this marker at the very end of your message: [[BOOK:YYYY-MM-DDTHH:MM|their@email]] (24-hour time, IST). Example: [[BOOK:2026-07-21T15:00|doctor@clinic.com]]. Rules: never invent or guess the email — if you do not have it, ask "So I can send the calendar invite, what email should I use?" before booking. In the message carrying the marker, tell them you are booking the slot now and the confirmation with the meeting link will arrive here in a moment. The system books it and automatically sends either the confirmation or, if the slot is taken, a message asking to pick another time. Never mention the marker; it is stripped before sending.',
+      )
+    } else {
+      parts.push(
+        'HARD LIMIT on your abilities (never violate): you can ONLY send WhatsApp text messages. You CANNOT book appointments, create or send calendar invites, send Google Meet/Zoom links, make phone calls, or access any calendar or email. The ONLY way a meeting gets booked is the customer completing the cal.com booking link themselves, or a human teammate arranging it. NEVER say "I have booked you", "I\'ll send the invite", "I\'ll call you", or anything that promises an action you cannot perform. When a customer asks you to book a time for them: share the booking link, ask them to pick the slot there, and say the booking is confirmed only once they complete it; offer that a teammate can help if they prefer.',
+      )
+    }
     parts.push(
       'Booking link rules (strict, apply to the generalist AND every specialist): the only booking link is https://cal.com/figfalcon/figfalcon-strategy-call. ' +
         'Share it ONLY when the lead clearly CONFIRMS they want to book or see a demo, e.g. "yes, book it", "yes let\'s do the demo", "send me the link", "how do I book a call". ' +
