@@ -556,7 +556,10 @@ export async function dispatchInboundToAiReply(
         name: contactName ?? 'WhatsApp Lead',
         email: booking.email,
         phone: contactPhone,
-        company: contactCompany,
+        company: booking.company || contactCompany,
+        industry: booking.industry,
+        teamSize: booking.teamSize,
+        budget: booking.budget,
       })
       const followText = result.ok
         ? `✅ Booked! Your call is confirmed for ${formatIstTime(result.startIso)}.\n\nCalendar invite sent to ${booking.email}.${result.meetUrl ? `\nMeeting link: ${result.meetUrl}` : ''}\n\nSee you there!`

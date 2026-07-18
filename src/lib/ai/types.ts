@@ -73,11 +73,19 @@ export interface GenerateResult {
    */
   service?: string
   /**
-   * Booking request from the [[BOOK:datetime|email]] marker (auto-reply
-   * mode with cal.com configured). `start` is naive IST local time
-   * "YYYY-MM-DDTHH:MM"; the pipeline books it and sends the follow-up.
+   * Booking request from the [[BOOK:...]] marker (auto-reply mode with
+   * cal.com configured). `start` is naive IST local time
+   * "YYYY-MM-DDTHH:MM"; the qualification answers the AI collected
+   * ride along so the cal.com form is filled with real data.
    */
-  booking?: { start: string; email: string }
+  booking?: {
+    start: string
+    email: string
+    company: string
+    industry: string
+    teamSize: string
+    budget: string
+  }
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

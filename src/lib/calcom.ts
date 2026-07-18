@@ -22,6 +22,10 @@ export interface CalBookingArgs {
   email: string
   phone?: string | null
   company?: string | null
+  /** Qualification answers the AI collected in-chat; env defaults fill gaps. */
+  industry?: string | null
+  teamSize?: string | null
+  budget?: string | null
 }
 
 export type CalBookingResult =
@@ -64,9 +68,10 @@ export async function createCalBooking(
           title: 'AI Demo Call (WhatsApp)',
           company_name: args.company || 'Not provided',
           'Industry-Business-Type':
-            process.env.CALCOM_DEFAULT_INDUSTRY || 'Healthcare',
-          Company_size: process.env.CALCOM_DEFAULT_COMPANY_SIZE || 'Solo',
-          budget: process.env.CALCOM_DEFAULT_BUDGET || '$800-$3,000',
+            args.industry || process.env.CALCOM_DEFAULT_INDUSTRY || 'Healthcare',
+          Company_size:
+            args.teamSize || process.env.CALCOM_DEFAULT_COMPANY_SIZE || 'Solo',
+          budget: args.budget || process.env.CALCOM_DEFAULT_BUDGET || '$800-$3,000',
           notes: 'Booked automatically via the WhatsApp AI assistant.',
         },
         metadata: { source: 'wacrm-ai' },
