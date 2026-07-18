@@ -4,16 +4,14 @@ import { resolveTemplateForTags } from './tag-template-map';
 describe('resolveTemplateForTags', () => {
   it('routes each interest tag to its template', () => {
     expect(resolveTemplateForTags(['Interested Lead - AI Voice Agent'])).toBe(
-      'ai_voice_reciptionist_picked_call_interested',
+      'ai_voice_feedback_survey',
     );
     expect(resolveTemplateForTags(['Interested Lead - AI Content'])).toBe(
-      'ai_video_content',
+      'ai_content_video_feedback_survey',
     );
-    expect(resolveTemplateForTags(['Cold Lead'])).toBe(
-      'ai_voice_reciption_and_whatsapp_unpicked_calls',
-    );
+    expect(resolveTemplateForTags(['Cold Lead'])).toBe('cold_outreach_dental');
     expect(resolveTemplateForTags(['test_broadcast'])).toBe(
-      'demo_call_followup_booking',
+      'ai_voice_feedback_survey',
     );
   });
 
@@ -23,12 +21,12 @@ describe('resolveTemplateForTags', () => {
         'Interested Lead - AI Content',
         'Interested Lead - Both AI',
       ]),
-    ).toBe('both_ai_automation_ai_content_growth_intrested');
+    ).toBe('ai_both_feedback_survey');
   });
 
   it('matches case-insensitively and ignores unrelated tags', () => {
     expect(resolveTemplateForTags(['cold lead', 'Awaiting Follow-up'])).toBe(
-      'ai_voice_reciption_and_whatsapp_unpicked_calls',
+      'cold_outreach_dental',
     );
   });
 

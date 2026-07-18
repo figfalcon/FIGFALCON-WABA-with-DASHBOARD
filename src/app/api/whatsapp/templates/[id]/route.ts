@@ -300,7 +300,12 @@ export async function DELETE(
         })
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Meta delete failed.'
-        return NextResponse.json({ error: message }, { status: 502 })
+        // Already gone on Meta (deleted via WhatsApp Manager) — the
+        // local row is a stray; fall through and remove it instead of
+        // stranding the user with an undeletable card.
+        if (!/not found|wasn't found|does not exist/i.test(message)) {
+          return NextResponse.json({ error: message }, { status: 502 })
+        }
       }
     }
 

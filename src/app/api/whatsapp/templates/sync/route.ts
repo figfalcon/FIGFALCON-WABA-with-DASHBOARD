@@ -13,8 +13,10 @@ import type { TemplateButton, TemplateSampleValues } from '@/types'
  * states (PAUSED) from terminal ones (DISABLED) and so webhook events
  * land 1:1 without a translation table.
  *
- * Locally-created templates (no Meta counterpart) are NOT deleted —
- * they remain visible so the user can notice drift and clean up.
+ * Mirroring: local rows that WERE on Meta (meta_template_id set) but
+ * no longer exist there — deleted via WhatsApp Manager — are removed,
+ * so the dashboard always matches Meta after a sync. Local DRAFT rows
+ * never submitted to Meta are kept.
  */
 
 const META_API_VERSION = 'v21.0'
@@ -301,13 +303,41 @@ export async function POST() {
       }
     }
 
+    // Mirror deletions: any local row that once lived on Meta
+    // (meta_template_id set) but is absent from the fetched list was
+    // deleted in WhatsApp Manager — drop it so the catalogs match.
+    // Skipped when Meta's list was truncated (missing ≠ deleted then).
+    let removed = 0
+    const listComplete = !(pageCount >= PAGE_CAP && nextUrl !== null)
+    if (listComplete) {
+      const metaKeys = new Set(metaTemplates.map((t) => `${t.name}|${t.language}`))
+      const { data: localRows } = await supabase
+        .from('message_templates')
+        .select('id, name, language, meta_template_id')
+        .eq('account_id', accountId)
+      for (const r of localRows ?? []) {
+        if (!r.meta_template_id) continue // never-submitted draft — keep
+        if (metaKeys.has(`${r.name}|${r.language}`)) continue
+        const { error: delErr } = await supabase
+          .from('message_templates')
+          .delete()
+          .eq('id', r.id)
+        if (delErr) {
+          errors.push({ name: r.name, language: r.language, message: delErr.message })
+        } else {
+          removed++
+        }
+      }
+    }
+
     return NextResponse.json({
       success: errors.length === 0,
       total: metaTemplates.length,
       inserted,
       updated,
+      removed,
       errors,
-      truncated: pageCount >= PAGE_CAP && nextUrl !== null,
+      truncated: !listComplete,
     })
   } catch (error) {
     console.error('Error syncing WhatsApp templates:', error)

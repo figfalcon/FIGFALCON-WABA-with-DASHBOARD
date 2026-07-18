@@ -8,11 +8,16 @@
  * tag); first match wins. Matching is case-insensitive on tag name.
  */
 export const TAG_TEMPLATE_ROUTES: { tagName: string; templateName: string }[] = [
-  { tagName: 'Interested Lead - Both AI', templateName: 'both_ai_automation_ai_content_growth_intrested' },
-  { tagName: 'Interested Lead - AI Voice Agent', templateName: 'ai_voice_reciptionist_picked_call_interested' },
-  { tagName: 'Interested Lead - AI Content', templateName: 'ai_video_content' },
-  { tagName: 'Cold Lead', templateName: 'ai_voice_reciption_and_whatsapp_unpicked_calls' },
-  { tagName: 'test_broadcast', templateName: 'demo_call_followup_booking' },
+  // Approved UTILITY feedback-survey templates (post-call follow-ups).
+  { tagName: 'Interested Lead - Both AI', templateName: 'ai_both_feedback_survey' },
+  { tagName: 'Interested Lead - AI Voice Agent', templateName: 'ai_voice_feedback_survey' },
+  { tagName: 'Interested Lead - AI Content', templateName: 'ai_content_video_feedback_survey' },
+  // No cold-outreach template exists right now (old marketing one was
+  // deleted on Meta). The route stays so the button re-enables the
+  // moment a template with this name is created + approved.
+  { tagName: 'Cold Lead', templateName: 'cold_outreach_dental' },
+  // Test contacts (kunal / Bikram) get the approved voice survey.
+  { tagName: 'test_broadcast', templateName: 'ai_voice_feedback_survey' },
 ];
 
 /** Resolve the template for a contact's tag names, or null if none map. */
