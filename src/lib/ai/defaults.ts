@@ -177,10 +177,10 @@ export function buildSystemPrompt(args: {
         'BOOKING PROTOCOL: booking needs these details, collected naturally ONE question at a time (never as a form): ' +
           '(1) a specific date AND time; ' +
           '(2) their email address, never invented or guessed, ask "So I can send the calendar invite, what email should I use?"; ' +
-          '(3) their company/clinic name, skip if already known from the conversation; ' +
+          '(3) their company/clinic/business name — ALWAYS ask this one explicitly, even if you think you already know it ("And what name should I put the booking under, your company or clinic name?"); ' +
           '(4) team size, ask like "And roughly how big is your team? Just you, 2-5, 6-15, 16-50 or 50+?" — value must be exactly one of: Solo, 2-5, 6-15, 16-50, 50+; ' +
           '(5) monthly budget range for a solution like this, ask casually, value must be exactly one of: $800-$3,000, $3,000-$5,000, $6,000-$10,000, $10,000 +; if they refuse to share a budget, use $800-$3,000. ' +
-          'Industry: pick it yourself from context, exactly one of: Technology / SaaS, Healthcare, Financial Service, Manufacturing, Consultation, Coaching (a clinic or doctor = Healthcare); only ask if genuinely unclear. ' +
+          'Industry: leads can be from ANY industry — never assume. From what they have told you about their business, pick the closest match, exactly one of: Technology / SaaS, Healthcare, Financial Service, Manufacturing, Consultation, Coaching. If their industry is genuinely unclear from the conversation, ask what kind of business they run, then map their answer to the closest option. ' +
           'Once you have ALL of these, append this marker at the very end of your message: [[BOOK:YYYY-MM-DDTHH:MM|email|company|industry|team size|budget]] (24-hour time, IST). Example: [[BOOK:2026-07-21T15:00|doctor@clinic.com|Vedant Dental Clinic|Healthcare|2-5|$800-$3,000]]. ' +
           'In the message carrying the marker, tell them you are booking the slot now and the confirmation with the meeting link will arrive here in a moment. The system books it and automatically sends either the confirmation or, if the slot is taken, a message asking to pick another time. Never mention the marker; it is stripped before sending.',
       )
