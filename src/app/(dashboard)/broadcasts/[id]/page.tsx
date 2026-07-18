@@ -40,6 +40,12 @@ import {
 } from '@/lib/broadcast-status';
 import { useTranslations } from 'next-intl';
 
+/** Always IST — the business runs on Indian time regardless of the
+ *  viewer's machine timezone. */
+function formatIst(iso: string): string {
+  return new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+}
+
 interface StatCardProps {
   label: string;
   value: number;
@@ -507,19 +513,15 @@ export default function BroadcastDetailPage() {
                         </span>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {recipient.sent_at
-                          ? new Date(recipient.sent_at).toLocaleString()
-                          : '-'}
+                        {recipient.sent_at ? formatIst(recipient.sent_at) : '-'}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {recipient.delivered_at
-                          ? new Date(recipient.delivered_at).toLocaleString()
+                          ? formatIst(recipient.delivered_at)
                           : '-'}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {recipient.read_at
-                          ? new Date(recipient.read_at).toLocaleString()
-                          : '-'}
+                        {recipient.read_at ? formatIst(recipient.read_at) : '-'}
                       </TableCell>
                       <TableCell
                         className="max-w-xs text-xs whitespace-normal break-words text-red-400"
