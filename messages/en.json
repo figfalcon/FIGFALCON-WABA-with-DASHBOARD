@@ -186,7 +186,8 @@
       "callVoice": "Voice call (phone dialer)",
       "callSchedule": "Schedule a call",
       "callVideoUnavailable": "Video call — not supported yet",
-      "callVideoUnavailableHint": "WhatsApp Business API does not offer video calling; in-WhatsApp voice calling needs Meta Calling API integration (separate project)."
+      "callVideoUnavailableHint": "WhatsApp Business API does not offer video calling; in-WhatsApp voice calling needs Meta Calling API integration (separate project).",
+      "callNumberCopied": "Number {phone} copied — dial from your phone"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -253,7 +254,8 @@
       "reactWith": "React with {emoji}",
       "nothingToCopy": "Nothing to copy",
       "copied": "Copied",
-      "copyFailed": "Copy failed"
+      "copyFailed": "Copy failed",
+      "statusInfo": "Delivery status"
     },
     "replyQuote": {
       "photo": "[Photo]",

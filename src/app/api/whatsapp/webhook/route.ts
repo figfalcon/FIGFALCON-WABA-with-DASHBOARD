@@ -65,6 +65,20 @@ interface WhatsAppMessage {
   context?: { id: string }
 }
 
+/** One event from the Cloud API Calling webhook (field "calls"). */
+interface WhatsAppCallEvent {
+  id: string
+  event: string // 'connect' | 'terminate' | ...
+  direction?: 'USER_INITIATED' | 'BUSINESS_INITIATED'
+  from?: string
+  to?: string
+  timestamp?: string
+  status?: string
+  start_time?: string
+  end_time?: string
+  duration?: number
+}
+
 interface WhatsAppWebhookEntry {
   id: string
   changes: Array<{
@@ -79,6 +93,8 @@ interface WhatsAppWebhookEntry {
         wa_id: string
       }>
       messages?: WhatsAppMessage[]
+      /** Cloud API Calling webhooks (field "calls"). */
+      calls?: WhatsAppCallEvent[]
       statuses?: Array<{
         id: string
         status: string
@@ -253,6 +269,12 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         }
       }
 
+      // Handle Calling webhooks — log ended/missed calls into the
+      // contact's thread so calls are never invisible in the inbox.
+      if (value.calls && value.calls.length > 0) {
+        await handleCallEvents(value.calls, value.metadata?.phone_number_id)
+      }
+
       // Handle incoming messages
       if (!value.messages || !value.contacts) continue
 
@@ -333,6 +355,97 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           decryptedAccessToken
         )
       }
+    }
+  }
+}
+
+/**
+ * Log WhatsApp voice-call events into the caller's inbox thread.
+ *
+ * Only `terminate` events are recorded (one entry per call): a
+ * user-initiated call with no duration = missed call; with duration =
+ * a completed call. The thread message keeps the call visible even
+ * though answering happens on the WhatsApp Business app / phone —
+ * the dashboard has no WebRTC leg yet.
+ */
+async function handleCallEvents(
+  calls: WhatsAppCallEvent[],
+  phoneNumberId: string | undefined,
+) {
+  if (!phoneNumberId) return
+  for (const call of calls) {
+    try {
+      if (call.event !== 'terminate') continue
+
+      const { data: cfgRows } = await supabaseAdmin()
+        .from('whatsapp_config')
+        .select('account_id, user_id')
+        .eq('phone_number_id', phoneNumberId)
+      const cfg = cfgRows?.[0]
+      if (!cfg) continue
+
+      const rawPeer =
+        call.direction === 'BUSINESS_INITIATED' ? call.to : call.from
+      if (!rawPeer) continue
+      const peerPhone = normalizePhone(rawPeer)
+
+      const contactOutcome = await findOrCreateContact(
+        cfg.account_id,
+        cfg.user_id,
+        peerPhone,
+        '',
+      )
+      if (!contactOutcome) continue
+      const convOutcome = await findOrCreateConversation(
+        cfg.account_id,
+        cfg.user_id,
+        contactOutcome.contact.id,
+      )
+      const conversation = convOutcome?.conversation
+      if (!conversation) continue
+
+      // Webhook retries resend events — one thread entry per call id.
+      const { data: existing } = await supabaseAdmin()
+        .from('messages')
+        .select('id')
+        .eq('message_id', call.id)
+        .limit(1)
+      if (existing && existing.length > 0) continue
+
+      const inbound = call.direction !== 'BUSINESS_INITIATED'
+      const answered = (call.duration ?? 0) > 0
+      const label = inbound
+        ? answered
+          ? `📞 WhatsApp voice call (${call.duration}s)`
+          : '📞 Missed WhatsApp voice call'
+        : `📞 Outgoing WhatsApp voice call${answered ? ` (${call.duration}s)` : ''}`
+
+      const ts = call.end_time ?? call.timestamp
+      await supabaseAdmin().from('messages').insert({
+        conversation_id: conversation.id,
+        sender_type: inbound ? 'customer' : 'agent',
+        content_type: 'text',
+        content_text: label,
+        message_id: call.id,
+        status: 'delivered',
+        created_at: ts
+          ? new Date(parseInt(ts) * 1000).toISOString()
+          : new Date().toISOString(),
+      })
+
+      await supabaseAdmin()
+        .from('conversations')
+        .update({
+          last_message_text: label,
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ...(inbound
+            ? { unread_count: (conversation.unread_count ?? 0) + 1 }
+            : {}),
+        })
+        .eq('id', conversation.id)
+    } catch (err) {
+      console.error('[webhook] call event handling failed:', err)
     }
   }
 }

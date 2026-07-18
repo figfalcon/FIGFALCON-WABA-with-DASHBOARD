@@ -1054,7 +1054,15 @@ export function MessageThread({
               <DropdownMenuContent align="end" className="border-border bg-popover">
                 <DropdownMenuItem
                   onClick={() => {
-                    window.location.href = `tel:${contact.phone.replace(/[^\d+]/g, "")}`;
+                    const phone = contact.phone.replace(/[^\d+]/g, "");
+                    // Desktop browsers usually have no tel: handler, so
+                    // copy the number first — the toast confirms it even
+                    // when the dialer prompt never appears.
+                    void navigator.clipboard
+                      .writeText(phone)
+                      .then(() => toast.success(t("callNumberCopied", { phone })))
+                      .catch(() => {});
+                    window.location.href = `tel:${phone}`;
                   }}
                   className="text-popover-foreground focus:bg-muted focus:text-foreground"
                 >
