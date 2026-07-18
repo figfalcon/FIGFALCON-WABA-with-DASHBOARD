@@ -12,7 +12,9 @@ import {
   Pencil,
   RotateCcw,
   Upload,
+  BookOpen,
 } from 'lucide-react';
+import { TemplateLibraryDialog } from './template-library-dialog';
 import { createClient } from '@/lib/supabase/client';
 import {
   uploadAccountMedia,
@@ -134,6 +136,7 @@ export function TemplateManager() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [form, setForm] = useState<TemplateFormData>(emptyForm);
   // Non-null when the dialog is editing an existing row — switches the
   // submit handler from POST /submit to PATCH /[id] and changes the
@@ -525,12 +528,29 @@ export function TemplateManager() {
               <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? t('syncing') : t('syncFromMeta')}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setLibraryOpen(true)}
+              title={t('libraryBtnTitle')}
+            >
+              <BookOpen className="size-4" />
+              {t('libraryBtn')}
+            </Button>
             <Button onClick={openCreate}>
               <Plus className="size-4" />
               {t('newTemplate')}
             </Button>
           </div>
         }
+      />
+
+      <TemplateLibraryDialog
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+        onCreated={() => {
+          setLibraryOpen(false);
+          if (user) void fetchTemplates(user.id);
+        }}
       />
 
       {templates.length === 0 ? (

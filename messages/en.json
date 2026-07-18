@@ -1461,7 +1461,21 @@
       "toastInvalidImage": "Header image must be a JPEG or PNG.",
       "toastImageTooLarge": "Image is {size} MB — Meta's limit is 5 MB.",
       "toastUploadSuccess": "Image uploaded.",
-      "toastUploadFailed": "Upload failed."
+      "toastUploadFailed": "Upload failed.",
+      "libraryBtn": "Template from Meta",
+      "libraryBtnTitle": "Browse Meta's pre-approved template library",
+      "libraryTitle": "Meta Template Library",
+      "libraryDesc": "Pre-written, pre-vetted utility templates from Meta (feedback surveys, reminders, confirmations). Creations are usually approved instantly.",
+      "librarySearchPlaceholder": "Search e.g. feedback, appointment, reminder...",
+      "librarySearchBtn": "Search",
+      "libraryEmpty": "No library templates found. Try a different search.",
+      "libraryAddBtn": "Add",
+      "libraryButtons": "Buttons: {names}",
+      "libraryUrlLabel": "URL for the button (opens when tapped)",
+      "libraryConfirmBtn": "Create template",
+      "libraryCreated": "Created \"{name}\" from the library ({status})",
+      "libraryCreateFailed": "Failed to create from library.",
+      "libraryLoadFailed": "Failed to load the template library."
     },
     "roles": {
       "admin": "Admin",
