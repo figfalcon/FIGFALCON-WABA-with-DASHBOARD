@@ -24,14 +24,34 @@ export interface MetaPhoneInfo {
 }
 
 interface MetaErrorResponse {
-  error?: { message?: string; code?: number; type?: string }
+  error?: {
+    message?: string
+    code?: number
+    type?: string
+    error_subcode?: number
+    /** Human-readable title/explanation Meta attaches to many errors. */
+    error_user_title?: string
+    error_user_msg?: string
+  }
 }
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
   let message = fallback
   try {
     const data = (await response.json()) as MetaErrorResponse
-    if (data.error?.message) message = data.error.message
+    const err = data.error
+    if (err) {
+      // Prefer Meta's human-readable explanation — the bare `message`
+      // is often just "Invalid parameter", which tells the user
+      // nothing (e.g. the real reason "You cannot edit a template
+      // more than once in 24 hours" lives in error_user_msg).
+      const detail = [err.error_user_title, err.error_user_msg]
+        .filter(Boolean)
+        .join(': ')
+      if (detail && err.message) message = `${err.message} — ${detail}`
+      else if (detail) message = detail
+      else if (err.message) message = err.message
+    }
   } catch {
     // response body wasn't JSON — keep the fallback
   }
