@@ -87,21 +87,38 @@ function TemplateButtonRows({ buttons }: { buttons: TemplateButtonInfo[] }) {
   );
 }
 
-function StatusIcon({ status }: { status: Message["status"] }) {
-  switch (status) {
-    case "sending":
-      return <Clock className="h-3 w-3 text-muted-foreground" />;
-    case "sent":
-      return <Check className="h-3 w-3 text-muted-foreground" />;
-    case "delivered":
-      return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
-    case "read":
-      return <CheckCheck className="h-3 w-3 text-blue-400" />;
-    case "failed":
-      return <XCircle className="h-3 w-3 text-red-400" />;
-    default:
-      return null;
-  }
+function StatusIcon({
+  status,
+  t,
+}: {
+  status: Message["status"];
+  t: ReturnType<typeof useTranslations>;
+}) {
+  // Hoverable, labelled ticks — mirrors WhatsApp's own semantics:
+  // clock=sending, ✓=sent, ✓✓=delivered, blue ✓✓=read, ✗=failed.
+  const icon = (() => {
+    switch (status) {
+      case "sending":
+        return <Clock className="h-3 w-3 text-muted-foreground" />;
+      case "sent":
+        return <Check className="h-3 w-3 text-muted-foreground" />;
+      case "delivered":
+        return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+      case "read":
+        return <CheckCheck className="h-3 w-3 text-blue-400" />;
+      case "failed":
+        return <XCircle className="h-3 w-3 text-red-400" />;
+      default:
+        return null;
+    }
+  })();
+  if (!icon) return null;
+  const label = t(`status.${status}`);
+  return (
+    <span title={label} aria-label={label} className="inline-flex">
+      {icon}
+    </span>
+  );
 }
 
 function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof useTranslations> }) {
@@ -395,7 +412,7 @@ export function MessageBubble({
           >
             {time}
           </span>
-          {isAgent && <StatusIcon status={message.status} />}
+          {isAgent && <StatusIcon status={message.status} t={t} />}
         </div>
       </div>
       {reactions && reactions.length > 0 && onToggleReaction && (

@@ -181,7 +181,12 @@
       "yesterday": "Yesterday",
       "deleteConfirm": "Delete this message from your CRM record? Note: WhatsApp does not allow businesses to unsend messages, so the recipient keeps their copy. This only removes it from your inbox here.",
       "deleted": "Message deleted from CRM",
-      "deleteFailed": "Failed to delete message"
+      "deleteFailed": "Failed to delete message",
+      "callMenu": "Call",
+      "callVoice": "Voice call (phone dialer)",
+      "callSchedule": "Schedule a call",
+      "callVideoUnavailable": "Video call — not supported yet",
+      "callVideoUnavailableHint": "WhatsApp Business API does not offer video calling; in-WhatsApp voice calling needs Meta Calling API integration (separate project)."
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -231,7 +236,14 @@
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "Sent automatically by the AI assistant"
+      "aiBadgeTitle": "Sent automatically by the AI assistant",
+      "status": {
+        "sending": "Sending...",
+        "sent": "Sent (1 tick): reached WhatsApp, not on their phone yet",
+        "delivered": "Delivered (2 ticks): on their phone",
+        "read": "Read (blue ticks): they opened it",
+        "failed": "Failed: WhatsApp did not deliver this message"
+      }
     },
     "actions": {
       "reply": "Reply",

@@ -27,6 +27,9 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Phone,
+  Video,
+  CalendarClock,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -1032,6 +1035,55 @@ export function MessageThread({
                 <PanelRightOpen className="h-4 w-4" />
               )}
             </button>
+          )}
+
+          {/* Call menu — voice call opens the device dialer with the
+              contact's number; schedule opens the cal.com booking page.
+              True in-WhatsApp VoIP calling needs Meta's Calling API +
+              a WebRTC stack — until that's built, video is shown as
+              unavailable rather than pretending. */}
+          {contact?.phone && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label={t("callMenu")}
+                title={t("callMenu")}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Phone className="h-3.5 w-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="border-border bg-popover">
+                <DropdownMenuItem
+                  onClick={() => {
+                    window.location.href = `tel:${contact.phone.replace(/[^\d+]/g, "")}`;
+                  }}
+                  className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                >
+                  <Phone className="size-4" />
+                  {t("callVoice")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    window.open(
+                      "https://cal.com/figfalcon/figfalcon-strategy-call",
+                      "_blank",
+                      "noopener,noreferrer",
+                    )
+                  }
+                  className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                >
+                  <CalendarClock className="size-4" />
+                  {t("callSchedule")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled
+                  title={t("callVideoUnavailableHint")}
+                  className="text-muted-foreground"
+                >
+                  <Video className="size-4" />
+                  {t("callVideoUnavailable")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           {/* Manual refresh — forces a refetch of the messages + the
