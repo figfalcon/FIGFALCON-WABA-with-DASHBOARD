@@ -117,26 +117,61 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
   const delimiter = lines[0].includes('\t') ? '\t' : ',';
   const rawHeaders = parseCsvLine(lines[0], delimiter);
 
-  // First alias win per built-in field; later duplicates fall through
-  // to custom so "Website available" + "website" both survive as
-  // distinct custom columns.
   const builtinIdx: Partial<Record<'phone' | 'name' | 'email' | 'company' | 'tags', number>> = {};
   const customByIdx = new Map<number, string>();
   const seenCustomKeys = new Set<string>();
+  const keys = rawHeaders.map((h) => headerKey(h));
+  const usedIdx = new Set<number>();
 
-  for (let i = 0; i < rawHeaders.length; i++) {
-    const key = headerKey(rawHeaders[i]);
+  // Pass 1 — exact alias match (first win per field).
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
     if (!key) continue;
-
     const builtin = HEADER_ALIASES[key];
     if (builtin && builtinIdx[builtin] === undefined) {
       builtinIdx[builtin] = i;
-      continue;
+      usedIdx.add(i);
     }
+  }
 
-    // Unrecognized (or a duplicate alias) → custom column. De-dupe
-    // display names case-insensitively; first occurrence wins.
-    if (seenCustomKeys.has(key)) continue;
+  // Pass 2 — fuzzy match for any still-missing built-in, so PREFIXED
+  // headers ("Clinic phone number", "Clinic name", "Business email")
+  // resolve instead of being dropped. Org-type words route a "...name"
+  // header to company (the clinic/business name) rather than the
+  // contact's personal name.
+  const ORG = /(clinic|hospital|shop|store|firm|company|business|practice|salon|studio|org)/;
+  const findFuzzy = (pred: (k: string) => boolean): number => {
+    for (let i = 0; i < keys.length; i++) {
+      if (usedIdx.has(i) || !keys[i]) continue;
+      if (pred(keys[i])) return i;
+    }
+    return -1;
+  };
+  const claim = (field: keyof typeof builtinIdx, idx: number) => {
+    if (idx >= 0 && builtinIdx[field] === undefined) {
+      builtinIdx[field] = idx;
+      usedIdx.add(idx);
+    }
+  };
+  if (builtinIdx.phone === undefined)
+    claim('phone', findFuzzy((k) => /(phone|mobile|whatsapp)/.test(k)));
+  if (builtinIdx.email === undefined)
+    claim('email', findFuzzy((k) => k.includes('email')));
+  if (builtinIdx.company === undefined)
+    claim(
+      'company',
+      findFuzzy(
+        (k) => /(company|business|organi[sz]ation)/.test(k) || (k.includes('name') && ORG.test(k)),
+      ),
+    );
+  if (builtinIdx.name === undefined)
+    claim('name', findFuzzy((k) => k.includes('name') && !ORG.test(k)));
+
+  // Pass 3 — everything left becomes a custom column (de-duped by key).
+  for (let i = 0; i < rawHeaders.length; i++) {
+    if (usedIdx.has(i)) continue;
+    const key = keys[i];
+    if (!key || seenCustomKeys.has(key)) continue;
     seenCustomKeys.add(key);
     customByIdx.set(i, headerDisplayName(rawHeaders[i]));
   }

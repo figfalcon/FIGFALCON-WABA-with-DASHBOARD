@@ -128,6 +128,28 @@ Alice,alice@x.test`;
     expect(parseContactCsv(csv).rows).toEqual([]);
   });
 
+  it('resolves prefixed headers (Clinic phone number, Clinic name)', () => {
+    const tsv =
+      'Clinic name.\tClinic phone number\tClinic rating.\tType of clinic.\n' +
+      'Shree Dental Clinic\t093073 23285\t5\tDental clinic';
+
+    const result = parseContactCsv(tsv);
+    expect(result.rows).toEqual([
+      {
+        phone: '093073 23285',
+        name: undefined,
+        email: undefined,
+        company: 'Shree Dental Clinic',
+        tagNames: [],
+        custom: { 'Clinic rating': '5', 'Type of clinic': 'Dental clinic' },
+      },
+    ]);
+    // "Clinic name" routed to company, "Clinic phone number" to phone;
+    // neither leaks into custom columns.
+    expect(result.customColumns).toEqual(['Clinic rating', 'Type of clinic']);
+    expect(result.hasCompanyColumn).toBe(true);
+  });
+
   it('parses a tab-separated spreadsheet paste', () => {
     // What copying cells from Google Sheets / Excel yields.
     const tsv =
