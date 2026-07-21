@@ -111,7 +111,11 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return empty;
 
-  const rawHeaders = parseCsvLine(lines[0]);
+  // Detect the delimiter so a spreadsheet PASTE (tab-separated, what you
+  // get copying cells from Google Sheets / Excel) works exactly like an
+  // uploaded CSV. Tabs win when present; otherwise comma.
+  const delimiter = lines[0].includes('\t') ? '\t' : ',';
+  const rawHeaders = parseCsvLine(lines[0], delimiter);
 
   // First alias win per built-in field; later duplicates fall through
   // to custom so "Website available" + "website" both survive as
@@ -156,7 +160,7 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
     const line = lines[i].trim();
     if (!line) continue;
 
-    const values = parseCsvLine(line);
+    const values = parseCsvLine(line, delimiter);
     const phone = cell(values, phoneIdx);
     if (!phone) continue;
 
@@ -184,8 +188,9 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
   };
 }
 
-/** Simple CSV line parse (handles quoted fields). */
-function parseCsvLine(line: string): string[] {
+/** Simple delimited-line parse (handles quoted fields). Delimiter is
+ *  comma for CSV or tab for a spreadsheet paste. */
+function parseCsvLine(line: string, delimiter: string = ','): string[] {
   const values: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -193,7 +198,7 @@ function parseCsvLine(line: string): string[] {
   for (const char of line) {
     if (char === '"') {
       inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       values.push(current.trim());
       current = '';
     } else {

@@ -178,6 +178,8 @@ export function ImportModal({
   const { accountId, canEditSettings } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [mode, setMode] = useState<'upload' | 'paste'>('upload');
+  const [pasteText, setPasteText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedContactRow[]>([]);
   const [hasTagsColumn, setHasTagsColumn] = useState(false);
@@ -232,6 +234,8 @@ export function ImportModal({
   );
 
   function reset() {
+    setMode('upload');
+    setPasteText('');
     setFile(null);
     setParsedRows([]);
     setHasTagsColumn(false);
@@ -251,11 +255,19 @@ export function ImportModal({
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0];
     if (!selected) return;
-
     setFile(selected);
-    setResult(null);
-
     const text = await selected.text();
+    await ingestText(text);
+  }
+
+  /**
+   * Parse CSV text OR a spreadsheet paste (tab-separated) into the
+   * preview. Shared by the file upload and the Paste box so both paths
+   * get identical header aliasing, custom fields, dedup and status
+   * flagging. The parser auto-detects the delimiter.
+   */
+  async function ingestText(text: string) {
+    setResult(null);
     const {
       rows,
       hasTagsColumn: csvHasTags,
@@ -602,6 +614,70 @@ export function ImportModal({
             />
           </DialogHeader>
 
+          {/* Source toggle: upload a CSV, or paste straight from a
+              spreadsheet (Google Sheets / Excel). */}
+          <div className="flex gap-1 rounded-lg bg-muted/60 p-1">
+            <button
+              type="button"
+              onClick={() => setMode('upload')}
+              className={cn(
+                'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                mode === 'upload'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {t('sourceUpload')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('paste')}
+              className={cn(
+                'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                mode === 'paste'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {t('sourcePaste')}
+            </button>
+          </div>
+
+          {mode === 'paste' ? (
+            <div className="space-y-2">
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                onPaste={(e) => {
+                  // Ingest immediately on paste so the preview appears
+                  // without a second click. Includes the header row.
+                  const pasted = e.clipboardData.getData('text');
+                  if (pasted.trim()) {
+                    e.preventDefault();
+                    setPasteText(pasted);
+                    void ingestText(pasted);
+                  }
+                }}
+                placeholder={t('pastePlaceholder')}
+                rows={5}
+                className="w-full resize-y rounded-xl border border-border/80 bg-background/40 px-3 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/40"
+              />
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-muted-foreground">
+                  {t('pasteHint')}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!pasteText.trim()}
+                  onClick={() => void ingestText(pasteText)}
+                  className="border-border text-muted-foreground hover:bg-muted"
+                >
+                  {t('pasteLoadBtn')}
+                </Button>
+              </div>
+            </div>
+          ) : (
           <div
             role="button"
             tabIndex={0}
@@ -646,6 +722,7 @@ export function ImportModal({
               </>
             )}
           </div>
+          )}
 
           <input
             ref={fileInputRef}

@@ -127,4 +127,25 @@ Alice,alice@x.test`;
 
     expect(parseContactCsv(csv).rows).toEqual([]);
   });
+
+  it('parses a tab-separated spreadsheet paste', () => {
+    // What copying cells from Google Sheets / Excel yields.
+    const tsv =
+      'Company name\tname\tphone number\tCity\n' +
+      'Vedant Dental\tDr. Prakash\t72489 66748\tAlandi';
+
+    const result = parseContactCsv(tsv);
+    expect(result.hasCompanyColumn).toBe(true);
+    expect(result.customColumns).toEqual(['City']);
+    expect(result.rows).toEqual([
+      {
+        phone: '72489 66748',
+        name: 'Dr. Prakash',
+        email: undefined,
+        company: 'Vedant Dental',
+        tagNames: [],
+        custom: { City: 'Alandi' },
+      },
+    ]);
+  });
 });

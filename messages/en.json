@@ -514,7 +514,12 @@
       "statusDupFile": "Duplicate in file",
       "statusExists": "Already in contacts",
       "statusExistsHint": "This number matches an existing contact. The contact will not be duplicated; its custom field values will be refreshed from this row.",
-      "previewStatusCounts": "{news} new · {dups} duplicate(s) · {exists} already in contacts"
+      "previewStatusCounts": "{news} new · {dups} duplicate(s) · {exists} already in contacts",
+      "sourceUpload": "Upload CSV",
+      "sourcePaste": "Paste from sheet",
+      "pastePlaceholder": "Paste rows copied from Google Sheets or Excel here (include the header row, e.g. Company name, name, phone number, City...)",
+      "pasteHint": "Copy the cells (with the header row) from your sheet, click here and press Ctrl+V.",
+      "pasteLoadBtn": "Load rows"
     },
     "customFields": {
       "title": "Custom fields",
