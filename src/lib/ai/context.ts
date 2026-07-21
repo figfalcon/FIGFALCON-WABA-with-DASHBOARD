@@ -10,8 +10,13 @@ interface DbMessage {
 /**
  * Fetch the last N text messages of a conversation and map them to the
  * provider-neutral chat shape. Customer messages become `user`; agent
- * and bot messages become `assistant`. Non-text messages (media,
- * templates, interactive) are excluded — they carry no text to model.
+ * and bot messages become `assistant`.
+ *
+ * Includes `template` messages because a template we sent carries its
+ * rendered body (the outreach copy) — without it the model can't tell
+ * that WE initiated the conversation and restarts as if the lead
+ * contacted us cold. Media / interactive rows are still excluded (no
+ * useful text).
  *
  * Ordered oldest-first (chronological) so the transcript reads
  * naturally and the most recent customer message lands last.
@@ -32,7 +37,7 @@ export async function buildConversationContext(
     .from('messages')
     .select('sender_type, content_text')
     .eq('conversation_id', conversationId)
-    .eq('content_type', 'text')
+    .in('content_type', ['text', 'template'])
   if (sinceIso) q = q.gt('created_at', sinceIso)
   const { data, error } = await q
     .order('created_at', { ascending: false })

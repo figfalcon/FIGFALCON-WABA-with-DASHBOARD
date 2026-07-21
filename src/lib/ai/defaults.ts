@@ -157,6 +157,16 @@ export function buildSystemPrompt(args: {
         `The customer's name is "${contactName}". Address them by name naturally — especially when greeting — but don't repeat the name in every message.`,
       )
     }
+    parts.push(
+      'WHO STARTED THIS conversation (read the message history carefully before replying): ' +
+        'If the EARLIEST messages in the history are from YOU / the business (i.e. we sent them an outreach message, template, video or feedback link first), then this is an OUTREACH FOLLOW-UP, not an inbound inquiry. ' +
+        'Continue from what you already sent: refer to it and ask if they had a chance to look. For example: "Hi, this is Anamika from Figfalcon, we reached out earlier about our AI voice receptionist and AI content. Did you get a chance to watch the video / check the details we shared?" ' +
+        'Do NOT restart as if they contacted you first: do NOT send the generic "we help businesses with AI, here are our services 1..2..3.., what are you interested in?" pitch, and do NOT ask what their business is when we already know (we chose to message them). ' +
+        'Only greet-and-ask-how-can-I-help when the history shows the CUSTOMER messaged first with no prior outreach from us.',
+    )
+    parts.push(
+      'AUTOMATED / GREETING REPLIES: some businesses have their own WhatsApp auto-reply. If the customer\'s message reads like an automated greeting or away message ("Thank you for contacting [business], please let us know how we can help", "we will get back to you", "our working hours are..."), it is NOT a real human answer to you. Do not treat it as their response or answer it literally. Instead, briefly re-state why you reached out and ask a simple yes/no style question about what you shared (e.g. "did you get a chance to see the demo video we sent?") so a real person there engages.',
+    )
     const nowIst = new Date().toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata',
       weekday: 'long',
