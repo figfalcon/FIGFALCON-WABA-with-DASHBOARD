@@ -49,14 +49,22 @@ export async function assignImportedCustomFields(
     throw new Error(`Failed to load custom fields: ${fieldsErr.message}`);
   }
 
+  // Normalize a field name so trivial variants of the SAME column map
+  // to one field: case, surrounding/duplicate spaces, and singular vs
+  // plural (a trailing "s"). This stops "Reason" / "Reasons" / "reason"
+  // from fragmenting into three separate columns on re-import.
+  const fieldKey = (name: string): string =>
+    name.trim().toLowerCase().replace(/\s+/g, ' ').replace(/s$/, '');
+
   const fieldIdByKey = new Map<string, string>();
   for (const f of existingFields ?? []) {
-    fieldIdByKey.set(f.field_name.trim().toLowerCase(), f.id);
+    const k = fieldKey(f.field_name);
+    if (!fieldIdByKey.has(k)) fieldIdByKey.set(k, f.id);
   }
 
   const skippedColumns: string[] = [];
   for (const col of usedColumns) {
-    const key = col.trim().toLowerCase();
+    const key = fieldKey(col);
     if (fieldIdByKey.has(key)) continue;
 
     if (!canCreateFields) {
@@ -85,7 +93,7 @@ export async function assignImportedCustomFields(
   const rows: { contact_id: string; custom_field_id: string; value: string }[] = [];
   for (const a of assignments) {
     for (const [col, value] of Object.entries(a.custom)) {
-      const fieldId = fieldIdByKey.get(col.trim().toLowerCase());
+      const fieldId = fieldIdByKey.get(fieldKey(col));
       if (!fieldId) continue;
       rows.push({ contact_id: a.contactId, custom_field_id: fieldId, value });
     }

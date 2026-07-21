@@ -519,7 +519,11 @@
       "sourcePaste": "Paste from sheet",
       "pastePlaceholder": "Paste rows copied from Google Sheets or Excel here (include the header row, e.g. Company name, name, phone number, City...)",
       "pasteHint": "Copy the cells (with the header row) from your sheet, click here and press Ctrl+V.",
-      "pasteLoadBtn": "Load rows"
+      "pasteLoadBtn": "Load rows",
+      "updateExistingLabel": "Update {count} existing contact(s)",
+      "updateExistingHint": "Refresh their company, name, email and custom fields (like Reasons) from this import. No duplicates are created. Uncheck to skip them instead.",
+      "toastUpdated": "Updated {count} existing contact(s)",
+      "resultUpdated": "{count} updated"
     },
     "customFields": {
       "title": "Custom fields",

@@ -180,6 +180,10 @@ export function ImportModal({
 
   const [mode, setMode] = useState<'upload' | 'paste'>('upload');
   const [pasteText, setPasteText] = useState('');
+  // When on, contacts whose phone already exists are UPDATED (company,
+  // name, email if present, plus custom field values) instead of
+  // skipped — so a re-import refreshes data like the notes column.
+  const [updateExisting, setUpdateExisting] = useState(true);
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<ParsedContactRow[]>([]);
   const [hasTagsColumn, setHasTagsColumn] = useState(false);
@@ -200,6 +204,7 @@ export function ImportModal({
   const [result, setResult] = useState<{
     imported: number;
     skipped: number;
+    updated: number;
     failed: number;
     tagsAssigned: number;
     customValues: number;
@@ -342,7 +347,14 @@ export function ImportModal({
 
       let imported = 0;
       let skipped = 0;
+      let updated = 0;
       let failed = 0;
+      const existingUpdates: {
+        id: string;
+        company?: string;
+        name?: string;
+        email?: string;
+      }[] = [];
 
       // 0) Normalize every phone to clean +CC form — no spaces/dashes,
       //    trunk 0 resolved, default country code applied when missing.
@@ -360,7 +372,7 @@ export function ImportModal({
       }
       if (normalizedRows.length === 0) {
         toast.error(t('toastNoValidPhones'));
-        setResult({ imported: 0, skipped: 0, failed, tagsAssigned: 0, customValues: 0 });
+        setResult({ imported: 0, skipped: 0, updated: 0, failed, tagsAssigned: 0, customValues: 0 });
         return;
       }
 
@@ -399,11 +411,23 @@ export function ImportModal({
       const toInsert = unique.filter((row) => {
         const existingId = findExistingId(row.phone);
         if (existingId) {
-          skipped++;
-          // Contact row untouched, but a re-import still refreshes its
-          // custom field values (upsert keyed on contact+field).
-          if (Object.keys(row.custom).length > 0) {
-            customAssignments.push({ contactId: existingId, custom: row.custom });
+          if (updateExisting) {
+            updated++;
+            // Refresh the contact's own fields (only those the new row
+            // actually carries, so we never wipe existing data) plus
+            // its custom values.
+            const upd: { id: string; company?: string; name?: string; email?: string } = {
+              id: existingId,
+            };
+            if (row.company) upd.company = row.company;
+            if (row.name) upd.name = row.name;
+            if (row.email) upd.email = row.email;
+            existingUpdates.push(upd);
+            if (Object.keys(row.custom).length > 0) {
+              customAssignments.push({ contactId: existingId, custom: row.custom });
+            }
+          } else {
+            skipped++;
           }
           return false;
         }
@@ -504,6 +528,30 @@ export function ImportModal({
         }
       }
 
+      // 4b) Update the own-fields of existing contacts we're refreshing
+      //     (company/name/email the new rows carried). Best-effort per
+      //     row; custom values are handled with the rest below.
+      for (const upd of existingUpdates) {
+        const patch: Record<string, string> = {};
+        if (upd.company) patch.company = upd.company;
+        if (upd.name) patch.name = upd.name;
+        if (upd.email) patch.email = upd.email;
+        if (Object.keys(patch).length === 0) continue;
+        await supabase.from('contacts').update(patch).eq('id', upd.id);
+      }
+
+      // 4b) Update the own fields of existing contacts we're refreshing
+      //     (company/name/email the new row carried). Custom values are
+      //     handled by the shared assign step below.
+      for (const upd of existingUpdates) {
+        const patch: Record<string, string> = {};
+        if (upd.company) patch.company = upd.company;
+        if (upd.name) patch.name = upd.name;
+        if (upd.email) patch.email = upd.email;
+        if (Object.keys(patch).length === 0) continue;
+        await supabase.from('contacts').update(patch).eq('id', upd.id);
+      }
+
       // 5) Wire tags onto the contacts we just created. Failure here must
       //    not mask a successful contact import.
       let tagsAssigned = 0;
@@ -541,9 +589,14 @@ export function ImportModal({
         toast.warning(t('toastCustomWarning'));
       }
 
-      setResult({ imported, skipped, failed, tagsAssigned, customValues });
+      setResult({ imported, skipped, updated, failed, tagsAssigned, customValues });
       if (imported > 0) {
         toast.success(t('toastImported', { count: imported }));
+      }
+      if (updated > 0) {
+        toast.success(t('toastUpdated', { count: updated }));
+      }
+      if (imported > 0 || updated > 0 || customValues > 0) {
         onImported();
       }
       if (tagsAssigned > 0) {
@@ -779,6 +832,28 @@ export function ImportModal({
                     {t('countryCodeHint')}
                   </span>
                 </div>
+
+                {/* Update-vs-skip for numbers already in the CRM. When
+                    on, a re-import refreshes existing contacts (company,
+                    name, email, custom fields) instead of skipping —
+                    never creates a duplicate either way. */}
+                {statusCounts.exists > 0 && (
+                  <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={updateExisting}
+                      onChange={(e) => setUpdateExisting(e.target.checked)}
+                      className="mt-0.5 size-4 accent-primary"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        {t('updateExistingLabel', { count: statusCounts.exists })}
+                      </span>
+                      <br />
+                      {t('updateExistingHint')}
+                    </span>
+                  </label>
+                )}
               </div>
 
               <div className="overflow-hidden rounded-xl border border-border ring-1 ring-border/50">
@@ -894,6 +969,12 @@ export function ImportModal({
                   <div className="text-primary flex items-center gap-1.5 text-sm">
                     <CheckCircle className="size-4 shrink-0" />
                     {t('resultImported', { count: result.imported })}
+                  </div>
+                )}
+                {result.updated > 0 && (
+                  <div className="flex items-center gap-1.5 text-sm text-emerald-400">
+                    <CheckCircle className="size-4 shrink-0" />
+                    {t('resultUpdated', { count: result.updated })}
                   </div>
                 )}
                 {result.tagsAssigned > 0 && (
