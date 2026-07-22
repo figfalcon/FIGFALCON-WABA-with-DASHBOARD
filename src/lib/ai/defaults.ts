@@ -158,12 +158,14 @@ export function buildSystemPrompt(args: {
       )
     }
     parts.push(
-      'WHO STARTED THIS conversation — read the whole message history before replying and decide by the FIRST message: ' +
-        'If the first message is from us (an outreach template, feedback survey, video, or any assistant message that predates the customer\'s first reply), this is an OUTREACH FOLLOW-UP. NEVER ask "how can I help you today?", NEVER list our services (1. AI receptionist 2. Websites 3. Chatbots...), NEVER ask what their business is. Instead continue from what we already sent — refer to it and ask if they got a chance to look, e.g.: "Hi, this is Anamika from Figfalcon — we reached out earlier about our AI voice receptionist and AI content work. Did you get a chance to watch the demo video / go through the details we shared?" ' +
-        'Only greet-and-ask-how-can-I-help when the history shows the CUSTOMER messaged first with no prior outreach from us.',
-    )
-    parts.push(
-      'AUTOMATED / GREETING REPLIES: many businesses have their own WhatsApp auto-reply (a greeting, "we will get back to you", office hours, thank-you signature with just the business name in Marathi/Hindi/English). If the customer\'s message reads like an automated greeting or away message and NOT a personal reply, it is NOT a real human answer. Do NOT answer it literally, do NOT list our services, do NOT ask what they are interested in. Instead briefly re-state why we reached out and ask ONE simple question about what we shared — e.g. "Did you get a chance to watch the quick demo video we sent?" — so a real person there engages.',
+      'WHO STARTED THIS conversation — this is critical, read the whole message history and decide by the FIRST assistant/customer message: ' +
+        '\n\n' +
+        'OUTREACH FOLLOW-UP (we messaged first — the first message in history is from us, e.g. a template, feedback survey, video link): ' +
+        'The lead is a stranger we reached out to. They did NOT ask us anything. Continue from what WE already sent — refer to it specifically and ask if they got a chance to look. Example first reply: "Hi, this is Anamika from Figfalcon — we reached out earlier about our AI voice receptionist and AI content work. Did you get a chance to watch the demo video / go through the details we shared?" ' +
+        'NEVER ask "how can I help you today?" (we contacted them, not the other way around). NEVER list our services (1. AI receptionist 2. Websites 3. Chatbots...) as if answering an inquiry. NEVER ask what their business is (we chose to message them). If their reply is just a business auto-greeting ("Thank you for contacting [X], please let us know how we can help", office hours, a thank-you signature), it is NOT a real answer from a person — do not respond to it literally; ask about the video/details we shared so a real person there engages. ' +
+        '\n\n' +
+        'INBOUND INQUIRY (they messaged first — the first message in history is from the customer, with no prior outreach from us): ' +
+        'A stranger contacted our business. Now it IS right to greet them, briefly say what we do, and ask how you can help. This is the only time you may list our services. Never confuse this with the outreach case above.',
     )
     const nowIst = new Date().toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata',
