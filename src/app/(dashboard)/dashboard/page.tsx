@@ -139,6 +139,7 @@ export default function DashboardPage() {
           <>
             <MetricCard
               title={t('activeConversations')}
+              titleHint={t('activeConversationsHint')}
               value={metrics.activeConversations.current.toLocaleString()}
               icon={MessageSquare}
               delta={{

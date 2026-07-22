@@ -123,7 +123,9 @@
     },
     "emptyState": {
       "title": "Not enough data yet"
-    }
+    },
+    "activeConversations": "Open Threads",
+    "activeConversationsHint": "Conversations currently in the Open status (not archived / closed). Each contact you have messaged counts here until you close their thread."
   },
   "Inbox": {
     "page": {
