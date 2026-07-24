@@ -168,6 +168,9 @@ export interface Conversation {
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
+  /** Set when the user pins the thread to the top of the inbox list
+   *  (migration 040). Sort: newest pin first, then last_message_at. */
+  pinned_at?: string | null;
   created_at: string;
   updated_at: string;
   contact?: Contact;

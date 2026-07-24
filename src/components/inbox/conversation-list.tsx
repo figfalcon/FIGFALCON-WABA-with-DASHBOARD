@@ -19,6 +19,9 @@ import {
   Archive,
   Trash2,
   Loader2,
+  Pin,
+  PinOff,
+  Copy,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -193,6 +196,17 @@ export function ConversationList({
       });
     }
 
+    // Pinned rows always float to the top (newest pin first). Beyond
+    // that, keep the DB's last_message_at order.
+    result = [...result].sort((a, b) => {
+      const pa = a.pinned_at ? new Date(a.pinned_at).getTime() : 0;
+      const pb = b.pinned_at ? new Date(b.pinned_at).getTime() : 0;
+      if (pa !== pb) return pb - pa;
+      const la = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+      const lb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+      return lb - la;
+    });
+
     return result;
   }, [conversations, filter, search, selectedTagIds, selectedCompany]);
 
@@ -221,6 +235,108 @@ export function ConversationList({
       onSelect(conv);
     },
     [onSelect]
+  );
+
+  // ── Right-click / long-press context menu on a single row ─────
+  // Coordinates are viewport-relative; null means "closed".
+  const [rowMenu, setRowMenu] = useState<{
+    conv: Conversation;
+    x: number;
+    y: number;
+  } | null>(null);
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
+
+  const updateConvLocal = useCallback(
+    (id: string, patch: Partial<Conversation>) => {
+      onConversationsLoaded(
+        conversations.map((c) => (c.id === id ? { ...c, ...patch } : c))
+      );
+    },
+    [conversations, onConversationsLoaded]
+  );
+
+  const togglePin = useCallback(
+    async (conv: Conversation) => {
+      const supabase = createClient();
+      const nextPin = conv.pinned_at ? null : new Date().toISOString();
+      updateConvLocal(conv.id, { pinned_at: nextPin });
+      const { error } = await supabase
+        .from("conversations")
+        .update({ pinned_at: nextPin })
+        .eq("id", conv.id);
+      if (error) {
+        toast.error(t("pinFailed"));
+        // revert optimistic
+        updateConvLocal(conv.id, { pinned_at: conv.pinned_at });
+        return;
+      }
+      toast.success(nextPin ? t("pinned") : t("unpinned"));
+    },
+    [updateConvLocal, t]
+  );
+
+  const markConvRead = useCallback(
+    async (conv: Conversation) => {
+      if (conv.unread_count === 0) return;
+      const supabase = createClient();
+      updateConvLocal(conv.id, { unread_count: 0 });
+      const { error } = await supabase
+        .from("conversations")
+        .update({ unread_count: 0 })
+        .eq("id", conv.id);
+      if (error) toast.error(t("bulkFailed"));
+    },
+    [updateConvLocal, t]
+  );
+
+  const setConvStatus = useCallback(
+    async (conv: Conversation, status: ConversationStatus) => {
+      const supabase = createClient();
+      updateConvLocal(conv.id, { status });
+      const { error } = await supabase
+        .from("conversations")
+        .update({ status })
+        .eq("id", conv.id);
+      if (error) toast.error(t("bulkFailed"));
+    },
+    [updateConvLocal, t]
+  );
+
+  const copyPhone = useCallback(
+    async (conv: Conversation) => {
+      const phone = conv.contact?.phone;
+      if (!phone) return;
+      try {
+        await navigator.clipboard.writeText(phone);
+        toast.success(t("phoneCopied", { phone }));
+      } catch {
+        toast.error(t("phoneCopyFailed"));
+      }
+    },
+    [t]
+  );
+
+  const deleteConv = useCallback(
+    async (conv: Conversation) => {
+      if (!window.confirm(t("deleteOneConfirm"))) return;
+      const supabase = createClient();
+      // Deals hold a non-cascading FK — detach first.
+      await supabase
+        .from("deals")
+        .update({ conversation_id: null })
+        .eq("conversation_id", conv.id);
+      const { error } = await supabase
+        .from("conversations")
+        .delete()
+        .eq("id", conv.id);
+      if (error) {
+        toast.error(t("bulkFailed"));
+        return;
+      }
+      onConversationsLoaded(conversations.filter((c) => c.id !== conv.id));
+      toast.success(t("deletedOne"));
+    },
+    [conversations, onConversationsLoaded, t]
   );
 
   // ── Bulk selection (mark read / close / delete) ────────────────
@@ -568,12 +684,162 @@ export function ConversationList({
                 selectMode={selectMode}
                 selected={selectedIds.has(conv.id)}
                 onToggleSelect={toggleSelected}
+                onOpenMenu={(c, x, y) => setRowMenu({ conv: c, x, y })}
                 t={t}
               />
             ))}
           </div>
         )}
       </ScrollArea>
+
+      {rowMenu && (
+        <RowContextMenu
+          conv={rowMenu.conv}
+          x={rowMenu.x}
+          y={rowMenu.y}
+          onClose={closeRowMenu}
+          onTogglePin={() => togglePin(rowMenu.conv)}
+          onMarkRead={() => markConvRead(rowMenu.conv)}
+          onSetStatus={(s) => setConvStatus(rowMenu.conv, s)}
+          onCopyPhone={() => copyPhone(rowMenu.conv)}
+          onDelete={() => deleteConv(rowMenu.conv)}
+          t={t}
+        />
+      )}
+    </div>
+  );
+}
+
+function RowContextMenu({
+  conv,
+  x,
+  y,
+  onClose,
+  onTogglePin,
+  onMarkRead,
+  onSetStatus,
+  onCopyPhone,
+  onDelete,
+  t,
+}: {
+  conv: Conversation;
+  x: number;
+  y: number;
+  onClose: () => void;
+  onTogglePin: () => void;
+  onMarkRead: () => void;
+  onSetStatus: (s: ConversationStatus) => void;
+  onCopyPhone: () => void;
+  onDelete: () => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  // Clamp position so a menu at the right edge doesn't overflow.
+  const MENU_W = 220;
+  const MENU_H = 230;
+  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1000) - MENU_W - 8);
+  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : 800) - MENU_H - 8);
+
+  useEffect(() => {
+    const onDown = () => onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    // Delay to ignore the right-click that opened us.
+    const id = setTimeout(() => {
+      window.addEventListener("mousedown", onDown);
+      window.addEventListener("keydown", onKey);
+    }, 0);
+    return () => {
+      clearTimeout(id);
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  const pinned = Boolean(conv.pinned_at);
+  const item =
+    "flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-sm text-popover-foreground hover:bg-muted";
+
+  return (
+    <div
+      role="menu"
+      style={{ left, top, width: MENU_W }}
+      onMouseDown={(e) => e.stopPropagation()}
+      className="fixed z-50 rounded-lg border border-border bg-popover p-1 shadow-lg"
+    >
+      <button
+        type="button"
+        onClick={() => {
+          onTogglePin();
+          onClose();
+        }}
+        className={item}
+      >
+        {pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+        {pinned ? t("menuUnpin") : t("menuPin")}
+      </button>
+      <button
+        type="button"
+        disabled={conv.unread_count === 0}
+        onClick={() => {
+          onMarkRead();
+          onClose();
+        }}
+        className={cn(item, "disabled:opacity-40")}
+      >
+        <MailOpen className="h-4 w-4" />
+        {t("menuMarkRead")}
+      </button>
+      {conv.status !== "closed" && (
+        <button
+          type="button"
+          onClick={() => {
+            onSetStatus("closed");
+            onClose();
+          }}
+          className={item}
+        >
+          <Archive className="h-4 w-4" />
+          {t("menuArchive")}
+        </button>
+      )}
+      {conv.status === "closed" && (
+        <button
+          type="button"
+          onClick={() => {
+            onSetStatus("open");
+            onClose();
+          }}
+          className={item}
+        >
+          <Archive className="h-4 w-4" />
+          {t("menuReopen")}
+        </button>
+      )}
+      <button
+        type="button"
+        disabled={!conv.contact?.phone}
+        onClick={() => {
+          onCopyPhone();
+          onClose();
+        }}
+        className={cn(item, "disabled:opacity-40")}
+      >
+        <Copy className="h-4 w-4" />
+        {t("menuCopyPhone")}
+      </button>
+      <div className="my-1 border-t border-border" />
+      <button
+        type="button"
+        onClick={() => {
+          onDelete();
+          onClose();
+        }}
+        className={cn(item, "hover:bg-red-500/10 hover:text-red-400")}
+      >
+        <Trash2 className="h-4 w-4" />
+        {t("menuDelete")}
+      </button>
     </div>
   );
 }
@@ -586,6 +852,8 @@ interface ConversationItemProps {
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: (id: string) => void;
+  /** Right-click / long-press → open the per-row action menu. */
+  onOpenMenu: (conv: Conversation, x: number, y: number) => void;
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -596,6 +864,7 @@ function ConversationItem({
   selectMode,
   selected,
   onToggleSelect,
+  onOpenMenu,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
@@ -613,13 +882,23 @@ function ConversationItem({
       })
     : "";
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      onOpenMenu(conversation, e.clientX, e.clientY);
+    },
+    [conversation, onOpenMenu]
+  );
+
   return (
     <button
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       className={cn(
         "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
         isActive && !selectMode && "border-l-2 border-primary bg-muted/70",
-        selectMode && selected && "bg-primary/10"
+        selectMode && selected && "bg-primary/10",
+        conversation.pinned_at && "bg-muted/25"
       )}
     >
       {selectMode && (
@@ -650,8 +929,16 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {displayName}
+          <span className="flex min-w-0 items-center gap-1">
+            {conversation.pinned_at && (
+              <Pin
+                className="h-3 w-3 shrink-0 text-primary"
+                aria-label={t("pinned")}
+              />
+            )}
+            <span className="truncate text-sm font-medium text-foreground">
+              {displayName}
+            </span>
           </span>
           <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
         </div>

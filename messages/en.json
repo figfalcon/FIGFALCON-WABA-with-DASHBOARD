@@ -156,7 +156,21 @@
       "bulkMarkedRead": "{count} marked as read",
       "bulkClosed": "{count} closed",
       "bulkDeleted": "{count} deleted",
-      "bulkFailed": "Bulk action failed"
+      "bulkFailed": "Bulk action failed",
+      "menuPin": "Pin to top",
+      "menuUnpin": "Unpin",
+      "menuMarkRead": "Mark as read",
+      "menuArchive": "Close (archive)",
+      "menuReopen": "Reopen",
+      "menuCopyPhone": "Copy phone number",
+      "menuDelete": "Delete",
+      "pinned": "Pinned to top",
+      "unpinned": "Unpinned",
+      "pinFailed": "Could not pin. Try again.",
+      "phoneCopied": "{phone} copied",
+      "phoneCopyFailed": "Could not copy",
+      "deleteOneConfirm": "Delete this conversation and all its messages from the CRM? This cannot be undone. (Messages on the recipient's phone are not affected.)",
+      "deletedOne": "Conversation deleted"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
